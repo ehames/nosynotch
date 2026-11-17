@@ -53,9 +53,27 @@ enum Clock {
     }
 }
 
+private struct VirtualDateKey: EnvironmentKey {
+    static let defaultValue: Date? = nil
+}
+
 extension EnvironmentValues {
     /// Set by the recorder: the virtual time every `ClockTimeline` below shows instead of the wall clock.
-    @Entry var virtualDate: Date?
+    var virtualDate: Date? {
+        get { self[VirtualDateKey.self] }
+        set { self[VirtualDateKey.self] = newValue }
+    }
+}
+
+private struct AnimationsPausedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var animationsPaused: Bool {
+        get { self[AnimationsPausedKey.self] }
+        set { self[AnimationsPausedKey.self] = newValue }
+    }
 }
 
 /// A drop-in for `TimelineView(.animation(…))` that follows the recorder's virtual clock while recording.
@@ -65,6 +83,7 @@ struct ClockTimeline<Content: View>: View {
     @ViewBuilder var content: (Date) -> Content
 
     @Environment(\.virtualDate) private var virtualDate
+    @Environment(\.animationsPaused) private var animationsPaused
 
     init(minimumInterval: Double? = nil, paused: Bool = false, @ViewBuilder content: @escaping (Date) -> Content) {
         self.minimumInterval = minimumInterval
@@ -77,7 +96,7 @@ struct ClockTimeline<Content: View>: View {
             // A paused timeline holds still; a fixed date keeps it deterministic.
             content(paused ? Date(timeIntervalSinceReferenceDate: 0) : virtualDate)
         } else {
-            TimelineView(.animation(minimumInterval: minimumInterval, paused: paused)) { timeline in
+            TimelineView(.animation(minimumInterval: minimumInterval, paused: paused || animationsPaused)) { timeline in
                 content(timeline.date)
             }
         }
@@ -90,6 +109,7 @@ struct PeriodicClock<Content: View>: View {
     @ViewBuilder var content: (Date) -> Content
 
     @Environment(\.virtualDate) private var virtualDate
+    @Environment(\.animationsPaused) private var animationsPaused
 
     init(every interval: TimeInterval, @ViewBuilder content: @escaping (Date) -> Content) {
         self.interval = interval
@@ -100,6 +120,8 @@ struct PeriodicClock<Content: View>: View {
         if let virtualDate {
             let t = virtualDate.timeIntervalSinceReferenceDate
             content(Date(timeIntervalSinceReferenceDate: (t / interval).rounded(.down) * interval))
+        } else if animationsPaused {
+            content(Clock.now())
         } else {
             TimelineView(.periodic(from: .now, by: interval)) { content($0.date) }
         }

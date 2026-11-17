@@ -4,7 +4,7 @@ import SwiftUI
 /// The settings window (menu bar ✦ → Settings…, or `npx nosynotch settings`). Dark and black like the notch:
 /// a sidebar with a live mini notch on the left, cards on the right.
 @MainActor
-final class SettingsWindowController {
+final class SettingsWindowController: NSObject, NSWindowDelegate {
     struct Actions {
         var statusLine: () -> String
         var playDemo: () -> Void
@@ -15,15 +15,34 @@ final class SettingsWindowController {
     }
 
     private var window: NSWindow?
+    private let visibility = SettingsAnimationVisibility()
+    private var visibilityObservers: [NSObjectProtocol] = []
     private let actions: Actions
 
     init(actions: Actions) {
         self.actions = actions
+        super.init()
+        for name in [NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+            visibilityObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshVisibility() }
+            })
+        }
     }
+
+    deinit { for observer in visibilityObservers { NotificationCenter.default.removeObserver(observer) } }
+
+    private func refreshVisibility() {
+        let paused = window.map { !$0.occlusionState.contains(.visible) || $0.isMiniaturized || NSApp.isHidden } ?? true
+        if visibility.paused != paused { visibility.paused = paused }
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) { refreshVisibility() }
+    func windowDidMiniaturize(_ notification: Notification) { refreshVisibility() }
+    func windowDidDeminiaturize(_ notification: Notification) { refreshVisibility() }
 
     func show(page: SettingsPage = .agents) {
         if window == nil {
-            let host = NSHostingController(rootView: SettingsView(actions: actions, page: page))
+            let host = NSHostingController(rootView: VisibleSettings(actions: actions, page: page, visibility: visibility))
             let window = NSWindow(contentViewController: host)
             window.title = "Nosy Notch"
             window.styleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
@@ -33,12 +52,39 @@ final class SettingsWindowController {
             window.appearance = NSAppearance(named: .darkAqua)
             window.backgroundColor = .black
             window.isReleasedWhenClosed = false
+            window.delegate = self
             window.setContentSize(SettingsView.size)
             window.center()
             self.window = window
         }
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        refreshVisibility()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === window else { return }
+        // A retained hosting controller keeps its TimelineViews running after close.
+        // Tear down the view tree and create fresh settings on the next open.
+        closingWindow.contentViewController = nil
+        window = nil
+    }
+}
+
+@MainActor
+private final class SettingsAnimationVisibility: ObservableObject {
+    @Published var paused = true
+}
+
+private struct VisibleSettings: View {
+    let actions: SettingsWindowController.Actions
+    let page: SettingsPage
+    @ObservedObject var visibility: SettingsAnimationVisibility
+
+    var body: some View {
+        SettingsView(actions: actions, page: page)
+            .environment(\.animationsPaused, visibility.paused)
     }
 }
 
@@ -863,7 +909,7 @@ private struct UsagePage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Card(title: "Limits", footer: "5-hour and weekly limits as bars when you hover the notch. Claude (Pro / Max) only shares them with its status line, so Nosy Notch adds a silent one – unless you already have your own. Codex: read from its session files.") {
+            Card(title: "Limits", footer: "5-hour and weekly limits as bars when you hover the notch. Claude (Pro / Max) only shares them with its status line, so Nosy Notch forwards its data while preserving your existing status line. Codex: read from its session files.") {
                 Row(title: "Show usage limits") {
                     NotchToggle(isOn: Binding(get: { usageEnabled }, set: setUsage), tint: Theme.codex)
                 }
