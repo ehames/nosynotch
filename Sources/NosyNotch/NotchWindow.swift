@@ -31,7 +31,9 @@ final class NotchPanel: NSPanel {
 
 enum NotchGeometry {
     static func preferredScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first
+        // The first screen owns the menu bar and follows the primary display chosen in macOS.
+        // NSScreen.main follows keyboard focus; prioritizing a physical notch pins us to the laptop.
+        NSScreen.screens.first ?? NSScreen.main
     }
 
     static func notch(on screen: NSScreen) -> (size: CGSize, physical: Bool) {
