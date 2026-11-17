@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if Preferences.calendarEnabled { self?.model.calendar.start() } else { self?.model.calendar.stop() }
             self?.store.settingsChanged()
             self?.usage.checkResets()
+            self?.model.ports.setWatching(self?.model.isHovering ?? false)
             self?.model.objectWillChange.send()
             self?.model.recompute()
         },
@@ -69,6 +70,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
+        // Hooks from an older version get the current command (only where they're already connected).
+        let upgraded = HookInstaller.upgradeOutdated(port: Preferences.port)
+        if !upgraded.isEmpty { NSLog("NosyNotch: updated hooks in \(upgraded.map(\.path))") }
+
         windowController = NotchWindowController(model: model)
         FocusTimer.shared.onFinished = { [weak self] phase, minutes in
             self?.model.showNotice(.timerDone(wasFocus: phase == .focus, minutes: minutes))
@@ -109,8 +114,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func feedNosy(_ transition: Transition) {
         guard Preferences.nosyEnabled, Preferences.nosyPet, case .finished(let session) = transition,
               !session.id.hasPrefix("demo-") else { return }
+        let locked = NosyAccessory.allCases.filter { !pet.isUnlocked($0) }
         if let level = pet.feed(duration: session.lastTurnDuration) {
             model.celebrateLevel(level)
+        }
+        if let earned = locked.first(where: { pet.isUnlocked($0) }) {
+            model.celebrateUnlock(earned)
         }
     }
 

@@ -31,6 +31,8 @@ final class NotchViewModel: ObservableObject {
         case timer
         /// A session's conversation with a reply field.
         case chat
+        /// Nothing at all going on: Nosy on the left, the time on the right.
+        case clock
     }
 
     struct Celebration: Equatable {
@@ -62,6 +64,11 @@ final class NotchViewModel: ObservableObject {
     let shelf: Shelf
     let focus = FocusTimer.shared
     let calendar: CalendarMonitor
+    /// Listening ports (dev servers) and who opened them.
+    let ports = PortMonitor()
+    /// Prompts waiting for a busy session.
+    let replyQueue = ReplyQueue()
+    private var replyQueueObserver: AnyCancellable?
     /// Files are being dragged and the pointer is near the notch.
     @Published var fileDragNear = false {
         didSet { if oldValue != fileDragNear { recompute() } }
@@ -88,8 +95,11 @@ final class NotchViewModel: ObservableObject {
     static let usageRowHeight: CGFloat = 24
     static let nosyCardHeight: CGFloat = 40
     static let shelfRowHeight: CGFloat = 46
+    static let portsRowHeight: CGFloat = 46
     static let calendarRowHeight: CGFloat = 34
+    static let clockCardHeight: CGFloat = 62
     static let chatListHeight: CGFloat = 170
+    static let queuedRowHeight: CGFloat = 30
 
     /// Extra height for the Allow / Deny row.
     static let approvalRowHeight: CGFloat = 40
@@ -159,6 +169,12 @@ final class NotchViewModel: ObservableObject {
 
     func sendReply(_ text: String) {
         guard let session = chatSession else { return }
+        if session.isBusy {
+            chatStatus = replyQueue.add(text, to: session.id)
+                ? "Goes out when \(session.agent.name) is done"
+                : "That's \(ReplyQueue.maxItems) waiting already – remove one first."
+            return
+        }
         pendingReply = ChatMessage(id: "pending-\(UUID().uuidString)", role: .user, text: text)
         chatMessages.append(pendingReply!)
         chatStatus = "Sending…"
@@ -276,6 +292,7 @@ final class NotchViewModel: ObservableObject {
         didSet {
             guard oldValue != isHovering else { return }
             if isHovering { wakeUp(); noteActivity() }
+            if !Clock.isVirtual { ports.setWatching(isHovering) }
             recompute()
             // Looking at the session list for a moment counts as "seen".
             if isHovering, !store.unseen.isEmpty {
@@ -312,6 +329,10 @@ final class NotchViewModel: ObservableObject {
         shelfObserver = shelf.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.objectWillChange.send() } }
         }
+        replyQueue.session = { [weak store] in store?.sessions[$0] }
+        replyQueueObserver = replyQueue.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.objectWillChange.send() } }
+        }
         head.onGesture = { [weak self] gesture in
             guard let self, let approval = self.attentionApproval else { return }
             self.decide(approval, gesture == .nod ? .allow : .deny)
@@ -322,6 +343,11 @@ final class NotchViewModel: ObservableObject {
             self?.objectWillChange.send()
             self?.recompute()
         }
+        ports.onChange = { [weak self] in
+            self?.objectWillChange.send()
+            self?.recompute()
+        }
+        if !Clock.isVirtual { ports.setWatching(false) }
         updateSleep()
         approvals.onChange = { [weak self] in
             guard let self else { return }
@@ -350,13 +376,36 @@ final class NotchViewModel: ObservableObject {
     }
 
     /// Whether the hover view lists Claude sessions (always, unless there are none but something else fills it).
-    var showsSessionList: Bool { !store.sessions.isEmpty || (!hasMedia && !showsNosyCard) }
+    var showsSessionList: Bool { !store.sessions.isEmpty || (!hasMedia && !showsNosyCard && !showsClock) }
+
+    /// The recorder only shows the clock in its own scene, so the idle notch in the others stays as it was.
+    var recordsClock = false
+
+    /// The second time zone on the big clock.
+    var clockZone: ClockZone? {
+        Clock.isVirtual ? ClockZone.all.first { $0.city == "New York" } : Preferences.clockZone
+    }
+
+    /// Nothing is running – no agent, no timer, no music, nothing left to look at – so the notch shows the time.
+    /// Only under a real notch: elsewhere it would be a permanent black pill on an empty menu bar.
+    var showsClock: Bool {
+        guard Clock.isVirtual ? recordsClock : Preferences.clockEnabled, hasPhysicalNotch else { return false }
+        let musicShown = hasMedia && (media.isPlaying || Preferences.mediaShowWhenPaused)
+        return !store.hasActivity && !store.hasWaiting && quietDone == nil && !focus.isRunning && !musicShown
+            && store.unseen.isEmpty
+    }
 
     /// The next meeting, if the calendar is on and one is coming up.
-    var upcomingMeeting: Meeting? { Preferences.calendarEnabled ? calendar.next : nil }
+    var upcomingMeeting: Meeting? { previewMeeting ?? (Preferences.calendarEnabled ? calendar.next : nil) }
+
+    /// For the recorder: a meeting without a calendar.
+    var previewMeeting: Meeting?
 
     /// Parked files in the hover view.
     var showsShelf: Bool { Preferences.shelfEnabled && !shelf.isEmpty }
+
+    /// Open ports in the hover view.
+    var showsPorts: Bool { (Clock.isVirtual || Preferences.portsEnabled) && !ports.visible.isEmpty }
 
     /// Nosy's energy / level / streak card at the top of the hover view.
     var showsNosyCard: Bool { Preferences.nosyEnabled && Preferences.nosyPet }
@@ -406,7 +455,7 @@ final class NotchViewModel: ObservableObject {
     var nosyOutside: Bool {
         guard Preferences.nosyEnabled else { return false }
         switch presentation {
-        case .hidden, .compact, .media, .peek, .timer: return false
+        case .hidden, .compact, .media, .peek, .timer, .clock: return false
         default: return true
         }
     }
@@ -441,6 +490,17 @@ final class NotchViewModel: ObservableObject {
 
     /// Nosy just reached a new level – shown on the "done" card for its duration.
     @Published private(set) var levelUp: Int?
+
+    /// A wardrobe item Nosy just earned – shown on the "done" card, instead of the level if both happen at once.
+    @Published private(set) var unlockedItem: NosyAccessory?
+
+    func celebrateUnlock(_ item: NosyAccessory) {
+        unlockedItem = item
+        nosyReact(.happy, for: 3)
+        Clock.after(max(Preferences.notificationSeconds, 4) + 1) { [weak self] in
+            if self?.unlockedItem == item { self?.unlockedItem = nil }
+        }
+    }
 
     func celebrateLevel(_ level: Int) {
         levelUp = level
@@ -513,12 +573,14 @@ final class NotchViewModel: ObservableObject {
         switch presentation {
         case .hidden:
             return CGSize(width: notchSize.width + 2 * flare, height: hasPhysicalNotch ? notchSize.height : 0)
-        case .compact, .media, .peek, .timer:
+        case .compact, .media, .peek, .timer, .clock:
             return CGSize(width: compactWidth, height: notchSize.height)
         case .expanded:
             var height = notchSize.height + 12
+            if showsClock { height += Self.clockCardHeight }
             if showsNosyCard { height += Self.nosyCardHeight }
             if showsShelf { height += Self.shelfRowHeight }
+            if showsPorts { height += Self.portsRowHeight }
             if upcomingMeeting != nil { height += Self.calendarRowHeight }
             if hasMedia { height += 2 + Self.mediaCardHeight }
             if showsSessionList {
@@ -538,7 +600,9 @@ final class NotchViewModel: ObservableObject {
         case .notice:
             return CGSize(width: wide, height: notchSize.height + 76)
         case .chat:
-            return CGSize(width: wide, height: notchSize.height + Self.chatListHeight + 108)
+            let queued = chatSession.map { replyQueue.items[$0.id]?.count ?? 0 } ?? 0
+            return CGSize(width: wide, height: notchSize.height + Self.chatListHeight + 108
+                          + CGFloat(queued) * Self.queuedRowHeight)
         }
     }
 
@@ -553,14 +617,14 @@ final class NotchViewModel: ObservableObject {
 
     var bottomRadius: CGFloat {
         switch presentation {
-        case .hidden, .compact, .media, .peek, .timer: return min(12, notchSize.height * 0.38)
+        case .hidden, .compact, .media, .peek, .timer, .clock: return min(12, notchSize.height * 0.38)
         default: return 26
         }
     }
 
     private static func topRadius(for p: Presentation) -> CGFloat {
         switch p {
-        case .hidden, .compact, .media, .peek, .timer: return 6
+        case .hidden, .compact, .media, .peek, .timer, .clock: return 6
         default: return 14
         }
     }
@@ -575,6 +639,7 @@ final class NotchViewModel: ObservableObject {
             failure = nil
             celebration = Celebration(session: session)
             flash(for: Preferences.notificationSeconds)
+            replyQueue.sessionFinished(session.id)
         case .needsAttention(let session):
             celebration = nil
             failure = nil
@@ -589,6 +654,7 @@ final class NotchViewModel: ObservableObject {
             shakes += 1
             flash(for: Preferences.notificationSeconds + 2)
         case .started(let session):
+            replyQueue.sessionStarted(session.id)
             if quietDone?.id == session.id { quietDone = nil }
             if celebration?.session.id == session.id { endFlash() }
             if attention?.id == session.id { endFlash() }
@@ -609,6 +675,7 @@ final class NotchViewModel: ObservableObject {
         if attention?.id == session.id { attention = nil }
         if failure?.id == session.id { failure = nil }
         quietDone = session
+        replyQueue.sessionFinished(session.id)
         quietWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
@@ -676,6 +743,7 @@ final class NotchViewModel: ObservableObject {
     func recompute() {
         updateChatObservation()
         updateSleep()
+        replyQueue.keep(Set(store.sessions.keys))
         defer {
             updateSpectrum()
             let canTrack = Bundle.main.bundleURL.pathExtension == "app"
@@ -708,8 +776,8 @@ final class NotchViewModel: ObservableObject {
             next = .limitReset
         } else if notice != nil {
             next = .notice
-        } else if isHovering && (!store.sessions.isEmpty || hasMedia || Preferences.nosyEnabled || showsShelf
-                                 || upcomingMeeting != nil) {
+        } else if isHovering && (!store.sessions.isEmpty || hasMedia || Preferences.nosyEnabled || showsShelf || showsPorts
+                                 || upcomingMeeting != nil || showsClock) {
             next = .expanded
         } else if store.hasActivity || store.hasWaiting || quietDone != nil {
             next = .compact
@@ -719,6 +787,8 @@ final class NotchViewModel: ObservableObject {
             next = .media
         } else if !store.unseen.isEmpty {
             next = .compact
+        } else if showsClock {
+            next = .clock
         } else if Preferences.nosyEnabled && pointerIsNear {
             next = .peek
         } else {

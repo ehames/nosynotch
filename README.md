@@ -52,7 +52,7 @@ npx nosynotch
 
 That one command downloads the app to `~/.nosynotch/`, connects every agent it finds and starts Nosy Notch in the
 background – no Dock icon, just a ✦ in the menu bar. You need [Node.js](https://nodejs.org) 18+ for `npx`
-(`brew install node` works too).
+(`brew install node` works too, or grab the installer from [the website](https://nosynotch.davidkubus.dev)).
 
 Two small things afterwards: restart Claude Code sessions that were already running, and – if you use Codex – trust the
 new hooks once in Codex (ChatGPT app → **Codex → Settings → Hooks**, or `/hooks` in the CLI). Codex runs no hook you
@@ -119,8 +119,8 @@ When the notch opens, Nosy drips out of the edge and hangs from it by its paws; 
 like into a puddle of tar – splash included. Bring the pointer close and it peeks out; leave it alone for a while
 and it falls asleep (sooner at night). Click it and it giggles.
 
-**Energy, levels and streaks** – every finished task feeds Nosy, days with tasks make a streak, XP unlock a little
-wardrobe (headphones, glasses, cap, bow). Deliberately guilt-free: Nosy never gets sad or sick, a missed day just
+**Energy, levels and streaks** – every finished task feeds Nosy, days with tasks make a streak, and levels, streaks
+and finished tasks earn a little wardrobe (headphones, glasses, cap, bow, party hat, crown, halo). Deliberately guilt-free: Nosy never gets sad or sick, a missed day just
 starts a new streak. Eight colours to pick from – Obsidian, the default, glows in the colour of the agent that's
 working. All of it stays in your Mac's settings, and you can turn Nosy off for the classic agent symbols.
 
@@ -128,7 +128,15 @@ working. All of it stays in your Mac's settings, and you can turn Nosy off for t
 
 ## More in the notch
 
+- **Clock** – when nothing is running, the time sits next to Nosy, with a countdown before your next meeting. Hover for
+  the big clock, the date and a second time zone; agents, music and the focus timer always go first.
+- **Task progress** – "3/7" on the wing while an agent works through its list.
+- **Next prompt** – type the follow-up while the agent is busy. It goes out when the turn ends, without pulling you away
+  from what you're doing.
 - **Shelf and AirDrop** – drag files onto the notch: park them on the shelf and drag them out later, or AirDrop them.
+- **Open ports** – every dev server on your Mac with its folder and who started it (Claude Code in Ghostty, Cursor …).
+  Click to open it in the browser, ✕ to stop it; sessions show the ports their agent opened. Run
+  `NosyNotch --ports` for the same list in the terminal. *(Opt-in.)*
 - **Focus timer** – 15 / 25 / 50 minutes from the hover view or the menu bar, a ring in the notch, agent sounds stay
   quiet until the break.
 - **Calendar** – your next meeting in the hover view and a heads-up 10 minutes before, with Join for Zoom, Meet,
@@ -147,7 +155,7 @@ Click the ✦ in the menu bar → **Settings…**
 - **Alerts** – sounds, mute for 1 h / 8 h / ∞, reminders
 - **Permissions** – the notch buttons and head gestures
 - **Usage** – which limits to show, a heads-up when a limit resets, context rings
-- **Extras** – Shelf and AirDrop, how replies are sent, focus timer, battery, headphones, calendar
+- **Extras** – Shelf and AirDrop, open ports, how replies are sent, focus timer, battery, headphones, calendar
 - **Music** – player and the live equalizer
 
 Mute and the focus timer are also right in the menu bar menu. Everything that needs a macOS permission (controlling
@@ -161,7 +169,7 @@ you turn it on – or asks only the first time you use it.
 Everything stays on your Mac. The hooks talk to `127.0.0.1` only and nothing is uploaded. The only network requests
 are for album covers (Spotify's public oEmbed with the track ID, Apple's iTunes Search with artist and title). The live equalizer analyses the
 player's audio in memory and records nothing; head gestures only read motion while a request is open. The calendar,
-headphone batteries and the conversation in the notch are read locally and never sent anywhere; Nosy's progress and the
+headphone batteries, open ports and the conversation in the notch are read locally and never sent anywhere; Nosy's progress and the
 shelf live in the app's settings. A reply typed in the notch goes to the session's own app (pasted with ⌘V, your
 clipboard is put back) or to the agent's own CLI. Approvals are protected by a secret in
 `~/.nosynotch/approval-token`, so no other process can answer in your name.
@@ -178,7 +186,7 @@ instantly and the agent carries on as if nothing happened – hooks never slow i
 
 | | Where the hooks live | Extra |
 |---|---|---|
-| Claude Code | `settings.json` in `~/.claude`, `$CLAUDE_CONFIG_DIR` and every `~/.claude-*` account folder | Usage limits and context via a silent status line – preserves your existing status line |
+| Claude Code | `settings.json` in `~/.claude`, `$CLAUDE_CONFIG_DIR` and every `~/.claude-*` account folder | Usage limits and context via a silent status line – your own status line keeps working and is restored on disconnect |
 | Codex | `~/.codex/hooks.json` | Limits and context from its session files |
 | Cursor | `~/.cursor/hooks.json` | Prints `{}` so Cursor never waits on it – except `beforeShellExecution` for commands outside the sandbox, which waits for Allow / Deny |
 
@@ -195,6 +203,18 @@ swift run                      # run directly
 ./scripts/record-gifs.sh       # re-record the GIFs in docs/gifs and the website videos (needs ffmpeg)
 ./scripts/record-gifs.sh done  # just one scene ("settings" = the settings window)
 ```
+
+With the macOS 27.2 SDK, standalone Command Line Tools can fail to build SwiftUI `@State`
+macros because they do not include the `SwiftUIMacros` plugin. Use full Xcode with that SDK,
+or select an installed macOS 26.5 SDK when building with Command Line Tools only:
+
+```bash
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk swift build -c release
+SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./scripts/build-app.sh --open
+```
+
+The SDK path must exist on your machine. This workaround was tested with Swift 6.4.2
+and the macOS 26.5 SDK on macOS 27.2.
 
 The recorder renders on a virtual clock, so no frame is ever dropped – a slow Mac just takes longer. Each scene
 becomes a GIF for this README (30 fps, 840 px) and an MP4 + JPG poster in `website/public/demo/`. Options as
@@ -222,6 +242,7 @@ Sources/NosyNotch/
 ├── Nosy/                            Nosy: drawing, moods, energy / levels / streaks, hanging + tar dive
 ├── Chat.swift                       transcripts → conversation, sending replies
 ├── Shelf.swift                      parked files, AirDrop
+├── Ports.swift                      listening ports, who opened them, quitting them
 ├── Notices.swift                    charging, low battery, headphones, meetings
 ├── FocusTimer.swift                 Pomodoro timer
 ├── CalendarMonitor.swift            next meeting (EventKit)

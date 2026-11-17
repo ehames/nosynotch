@@ -103,6 +103,10 @@ struct NotchView: View {
             switch model.presentation {
             case .expanded:
                 VStack(spacing: 0) {
+                    if model.showsClock {
+                        ClockCard(zone: model.clockZone)
+                            .transition(.blurFade)
+                    }
                     if model.showsNosyCard {
                         NosyCard(pet: model.pet, trailing: AnyView(FocusButton(timer: model.focus)))
                     }
@@ -114,10 +118,14 @@ struct NotchView: View {
                             .padding(.top, 2)
                     }
                     if model.showsSessionList {
-                        SessionList(store: store, onChat: { model.openChat($0) })
+                        SessionList(store: store, queued: model.replyQueue.items, onChat: { model.openChat($0) },
+                                    ports: { model.showsPorts ? model.ports.ports(for: $0) : [] })
                     }
                     if model.showsShelf {
                         ShelfRow(shelf: model.shelf)
+                    }
+                    if model.showsPorts {
+                        PortsRow(monitor: model.ports)
                     }
                     let usageRows = model.usageRows
                     if !usageRows.isEmpty {
@@ -131,6 +139,7 @@ struct NotchView: View {
                     CelebrationView(celebration: celebration,
                                     live: store.sessions[celebration.session.id],
                                     levelUp: model.levelUp,
+                                    unlocked: model.unlockedItem,
                                     onReply: { model.openChat($0) },
                                     onTap: { model.dismissFlash() },
                                     onDismiss: { model.dismissFlash() })
@@ -159,7 +168,10 @@ struct NotchView: View {
                 }
             case .chat:
                 if let session = model.chatSession {
-                    ChatView(session: session, messages: model.chatMessages, status: model.chatStatus,
+                    ChatView(session: session, messages: model.chatMessages,
+                             status: model.replyQueue.problems[session.id] ?? model.chatStatus,
+                             queued: model.replyQueue.items[session.id] ?? [],
+                             onRemoveQueued: { model.replyQueue.remove($0, from: session.id) },
                              onSend: { model.sendReply($0) },
                              onOpenApp: { TerminalActivator.activate(session) },
                              onClose: { model.closeChat() })
@@ -177,7 +189,7 @@ struct NotchView: View {
                 DropZoneView(onShelf: { urls in model.shelf.add(urls); model.fileDragNear = false },
                              onAirDrop: { urls in model.fileDragNear = false; AirDrop.send(urls) })
                     .transition(.blurFade.combined(with: .scale(scale: 0.85, anchor: .top)))
-            case .hidden, .compact, .media, .peek, .timer:
+            case .hidden, .compact, .media, .peek, .timer, .clock:
                 EmptyView()
             }
         }
@@ -234,6 +246,9 @@ struct NotchView: View {
                                 color: model.presentation == .celebrating ? Theme.success : primary.accent)
                         .frame(width: 18, height: 18)
                         .transition(.scale(scale: 0.2).combined(with: .opacity))
+                } else if model.presentation == .clock {
+                    ClockDayWing()
+                        .transition(.scale(scale: 0.2).combined(with: .opacity))
                 }
             }
             .frame(width: Self.wingContent, alignment: .center)
@@ -243,6 +258,9 @@ struct NotchView: View {
             ZStack {
                 if model.presentation == .timer {
                     FocusRing(timer: model.focus)
+                        .transition(.scale(scale: 0.2).combined(with: .opacity))
+                } else if model.presentation == .clock {
+                    ClockWing(dimmed: model.isAsleep, meeting: model.upcomingMeeting)
                         .transition(.scale(scale: 0.2).combined(with: .opacity))
                 } else if model.presentation == .peek {
                     NosyPeekBadge(asleep: model.isAsleep, energy: model.pet.energy, showsEnergy: Preferences.nosyPet)
@@ -259,6 +277,9 @@ struct NotchView: View {
                         ElapsedText(since: primary.turnStartedAt)
                     } else if model.showsUnseenDot {
                         UnseenDot(count: store.unseen.count)
+                            .transition(.scale(scale: 0.2).combined(with: .opacity))
+                    } else if primary.state.isActive, primary.todos.total > 0 {
+                        TodoWing(session: primary)
                             .transition(.scale(scale: 0.2).combined(with: .opacity))
                     } else {
                         StatusIndicator(session: primary)
@@ -293,7 +314,10 @@ struct ElapsedText: View {
 
 struct SessionList: View {
     @ObservedObject var store: SessionStore
+    var queued: [String: [ReplyQueue.Item]] = [:]
     var onChat: ((Session) -> Void)?
+    /// The ports each session's agent started.
+    var ports: ((Session) -> [ListeningPort])?
 
     var body: some View {
         let sessions = Array(store.ordered.prefix(NotchViewModel.maxRows))
@@ -305,7 +329,8 @@ struct SessionList: View {
                     .frame(height: NotchViewModel.rowHeight)
             }
             ForEach(sessions) { session in
-                SessionRow(session: session, onDismiss: { store.dismiss(session.id) }, onChat: { onChat?(session) })
+                SessionRow(session: session, queued: queued[session.id]?.count ?? 0, onDismiss: { store.dismiss(session.id) },
+                           onChat: { onChat?(session) }, ports: ports?(session) ?? [])
                     .frame(height: NotchViewModel.rowHeight)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -318,8 +343,10 @@ struct SessionList: View {
 
 struct SessionRow: View {
     let session: Session
+    var queued = 0
     var onDismiss: () -> Void
     var onChat: (() -> Void)?
+    var ports: [ListeningPort] = []
     @State private var hovering = false
 
     var body: some View {
@@ -355,6 +382,23 @@ struct SessionRow: View {
             }
 
             Spacer(minLength: 8)
+
+            if queued > 0 {
+                HStack(spacing: 3) {
+                    Image(systemName: "clock.fill").font(.system(size: 9))
+                    Text("\(queued)").font(.system(size: 11, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(session.agent.color)
+                .help(queued == 1 ? "1 prompt waiting" : "\(queued) prompts waiting")
+            }
+
+            if !ports.isEmpty {
+                SessionPorts(ports: ports)
+            }
+
+            if session.todos.total > 0 {
+                TodoCount(todos: session.todos, color: session.accent)
+            }
 
             if Preferences.contextEnabled, let context = session.contextPercent {
                 ContextRing(percent: context)
@@ -447,6 +491,8 @@ struct CelebrationView: View {
     let live: Session?
     /// Nosy reached this level with this task.
     var levelUp: Int?
+    /// Nosy earned this wardrobe item with this task.
+    var unlocked: NosyAccessory?
     var onReply: ((Session) -> Void)?
     var onTap: () -> Void
     var onDismiss: () -> Void
@@ -479,8 +525,11 @@ struct CelebrationView: View {
                             .font(.system(size: 12, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.5))
                     }
-                    if let levelUp {
-                        LevelUpPill(level: levelUp)
+                    if let unlocked {
+                        LevelUpPill(text: "New: \(unlocked.title)")
+                            .transition(.scale(scale: 0.4).combined(with: .opacity))
+                    } else if let levelUp {
+                        LevelUpPill(text: "Level \(levelUp)")
                             .transition(.scale(scale: 0.4).combined(with: .opacity))
                     }
                 }
@@ -527,16 +576,16 @@ struct CelebrationView: View {
     }
 }
 
-/// "✦ Level 4" – Nosy levelled up with this task.
+/// "✦ Level 4" or "✦ New: Crown" – what Nosy earned with this task.
 struct LevelUpPill: View {
-    let level: Int
+    let text: String
     @State private var shine = false
 
     var body: some View {
         HStack(spacing: 4) {
             SparkleShape().fill(NosyPalette.spark).frame(width: 9, height: 9)
                 .rotationEffect(.degrees(shine ? 180 : 0))
-            Text("Level \(level)")
+            Text(text)
                 .font(.system(size: 11, weight: .bold, design: .rounded))
         }
         .foregroundStyle(.black)

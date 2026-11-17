@@ -86,6 +86,8 @@ private struct VisibleSettings: View {
         SettingsView(actions: actions, page: page)
             .environment(\.animationsPaused, visibility.paused)
     }
+
+
 }
 
 enum SettingsPage: String, CaseIterable, Identifiable {
@@ -225,7 +227,7 @@ private struct Sidebar: View {
 
     static var version: String {
         // `swift run` / the GIF recorder have no Info.plist – keep in sync with Resources/Info.plist.
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.3.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.4.0"
     }
 }
 
@@ -1035,13 +1037,45 @@ private struct ExtrasPage: View {
     @AppStorage(Preferences.Key.breakMinutes) private var breakMinutes = 5
     @AppStorage(Preferences.Key.focusMutesAlerts) private var focusMutes = true
     @AppStorage(Preferences.Key.replyMode) private var replyMode = "type"
+    @AppStorage(Preferences.Key.clockEnabled) private var clock = true
+    @AppStorage(Preferences.Key.clockZone) private var clockZone = ""
+    @AppStorage(Preferences.Key.portsEnabled) private var ports = false
+    @AppStorage(Preferences.Key.portsShowAll) private var portsShowAll = false
 
     private let tint = SettingsPage.extras.tint
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
+            Card(title: "Clock", footer: "Agents, music and the focus timer always go first. Hover the notch for the date.") {
+                Row(title: "Show the time when nothing is running") {
+                    NotchToggle(isOn: bind($clock), tint: tint)
+                }
+                Row(title: "Second time zone", subtitle: "Next to the big clock when you hover the notch", divider: false) {
+                    Picker("", selection: Binding(get: { clockZone }, set: { clockZone = $0; actions.settingsChanged() })) {
+                        Text("None").tag("")
+                        ForEach(ClockZone.all) { Text($0.city).tag($0.identifier) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .fixedSize()
+                }
+                .opacity(clock ? 1 : 0.4)
+                .disabled(!clock)
+            }
+
             Card(title: "Files", footer: "Drag files onto the notch: park them on the shelf and drag them out later, or AirDrop them. Only references are kept.") {
                 Row(title: "Shelf and AirDrop", divider: false) { NotchToggle(isOn: bind($shelf), tint: tint) }
+            }
+
+            Card(title: "Open ports", footer: "Dev servers you or an agent started, with the folder and who opened them. Click one to open it in the browser, ✕ to stop it. Only your own processes – nothing needs a password.") {
+                Row(title: "Show open ports when I hover the notch") {
+                    NotchToggle(isOn: bind($ports), tint: tint)
+                }
+                Row(title: "Include apps", subtitle: "Spotify, AirPlay, Raycast … – quitting one asks first", divider: false) {
+                    NotchToggle(isOn: bind($portsShowAll), tint: tint)
+                }
+                .opacity(ports ? 1 : 0.4)
+                .disabled(!ports)
             }
 
             Card(title: "Reply from the notch", footer: replyMode == "type"
@@ -1102,7 +1136,8 @@ private struct NosyPage: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            NosyStage(level: actions.pet?.level ?? 1, accessory: NosyAccessory(rawValue: accessory) ?? .none,
+            NosyStage(level: actions.pet?.level ?? 1,
+                      accessory: actions.pet?.wearing(NosyAccessory(rawValue: accessory) ?? .none) ?? .none,
                       color: NosyColor(rawValue: colorName) ?? .obsidian)
 
             Card(footer: "Nosy looks out of the notch, follows your pointer, works along with your agents, falls asleep when nothing happens and cheers when a task is done. Off = the classic agent symbols.") {
@@ -1134,10 +1169,10 @@ private struct NosyPage: View {
                 .padding(12)
             }
 
-            Card(title: "Wardrobe", footer: "Unlocked with levels. Headphones go on by themselves while music plays.") {
-                HStack(spacing: 10) {
+            Card(title: "Wardrobe", footer: "Unlocked with levels, streaks and finished tasks. Headphones go on by themselves while music plays.") {
+                HStack(spacing: 8) {
                     ForEach(NosyAccessory.allCases) { item in
-                        WardrobeItem(item: item, level: actions.pet?.level ?? 1, selected: accessory == item.rawValue, tint: tint,
+                        WardrobeItem(item: item, unlocked: actions.pet?.isUnlocked(item) ?? (item == .none), selected: accessory == item.rawValue, tint: tint,
                                      color: NosyColor(rawValue: colorName) ?? .obsidian) {
                             accessory = item.rawValue
                             actions.settingsChanged()
@@ -1233,27 +1268,27 @@ private struct ProgressBar: View {
 
 private struct WardrobeItem: View {
     let item: NosyAccessory
-    let level: Int
+    let unlocked: Bool
     let selected: Bool
     let tint: Color
     let color: NosyColor
     let action: () -> Void
 
-    private var unlocked: Bool { level >= item.level }
-
     var body: some View {
         Button(action: action) {
             VStack(spacing: 4) {
-                NosyFigure(mood: .idle, level: 1, accessory: unlocked ? item : .none, tint: Theme.claude, color: color)
-                    .frame(width: 40, height: 50)
+                NosyFigure(mood: .idle, level: 1, accessory: item, tint: Theme.claude, color: color)
+                    .frame(width: 34, height: 43)
                     .opacity(unlocked ? 1 : 0.35)
                     .overlay {
                         if !unlocked {
                             Image(systemName: "lock.fill").font(.system(size: 12)).foregroundStyle(.white.opacity(0.7))
                         }
                     }
-                Text(unlocked ? item.title : "Lv \(item.level)")
-                    .font(.system(size: 10, weight: .medium))
+                Text(unlocked ? item.title : item.lockedLabel)
+                    .font(.system(size: 9, weight: .medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                     .foregroundStyle(.white.opacity(selected ? 0.95 : 0.5))
             }
             .frame(maxWidth: .infinity)

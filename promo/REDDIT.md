@@ -13,10 +13,12 @@ Ready-to-copy posts (English) for the v0.3 launch with Nosy, the chat in the not
 - [ ] GitHub description, e.g.: *"A tiny helper in your MacBook notch: watches Claude Code, Codex and Cursor, plays your music, holds your files. Free, local, MIT."*
 - [ ] ⚠ Check feature status: reply from the notch (how exactly: Accessibility / typing into the app?), calendar + AirPods opt-in, Nosy accessories and level names, timer mutes agent sounds
 - [ ] Clips recorded (see 1.)
-- [ ] Reddit karma: r/ClaudeAI needs **≥ 50 total karma** for a feed post (otherwise megathread). Comment helpfully in the subs a few days before posting.
+- [ ] Reddit karma: r/ClaudeAI needs **> 100 karma** for a feed post (otherwise megathread). Comment helpfully in the subs a few days before posting.
 - [ ] Have the first comment of your own (section 4) ready to paste
 
 ## 1. Clips you need
+
+**Finished promo video (44 s, voiceover + music):** `~/Desktop/Projects/nosy_sonstiges/nosy-video/renders/nosy-notch-promo.mp4` (HyperFrames project next to it, rebuild with `python3 build.py`). Good as the main video for r/ClaudeAI, r/SideProject and r/vibecoding.
 
 Upload MP4s, not GIFs (sharper, smaller; Reddit turns GIFs into video anyway). A post holds **one video** or a **gallery** (up to 20 images/GIFs).
 
@@ -46,6 +48,9 @@ US prime time: **Tuesday–Thursday, 8–10 am ET = 2–4 pm German time.** 3–
 | 3 (Thu) | r/codex, r/ChatGPTCoding, r/OpenAI (only in the project thread) | Codex audience |
 | 4–5 (weekend) | r/opensource, r/coolgithubprojects | Broad reach, weekend browsers |
 | +1 week | r/swift / r/SwiftUI (technical post), Show HN, email to Korben | Second wave with a "how I built it" angle |
+| +1 week | r/AI_Agents, r/indiehackers, r/alphaandbetausers (3c) | Second wave, agents + builders + testers |
+| +8–10 days | r/devtools, r/IMadeThis, r/aipromptprogramming, r/AIToolsTech, r/aitools (3c) | Small subs, low risk |
+| +10–12 days | r/tamagotchi, r/virtualpets (3c, check rules first) | Pet fans, Nosy as the hook |
 | at 100 ★ | r/macapps (post parked in 3b) | Only once the repo has 100 stars |
 
 Deliberately left out: r/MacOS, r/cursor, r/macbookpro, r/macbookair.
@@ -56,62 +61,92 @@ Deliberately left out: r/MacOS, r/cursor, r/macbookpro, r/macbookair.
 
 ### r/ClaudeAI
 **Flair:** Built with Claude · **Media:** `nosy-hero.mp4`
+> Sub rules (as of now): built with/for Claude **by you**, detailed description of how Claude helped, **say it's free to try**, minimal promo language, no referral links. **Feed posts need > 100 karma**, otherwise the megathread.
 
 **Title**
 ```
-I built a tiny helper that lives in my MacBook notch, works along with Claude Code and jumps for joy when it's done
+I built a free Mac app with Claude Code: a tiny helper in the MacBook notch that shows what Claude Code is doing
 ```
 
 **Text**
 ```
-I'm the developer, and I built this almost entirely with Claude Code.
+I built Nosy Notch, a free and open-source macOS app, almost entirely with Claude Code. It's free to try, no paid tier.
 
-Claude Code often works on its own for minutes, then sits there waiting for a "yes" I never saw. So my notch app Nosy Notch got a resident: Nosy, a small egg-shaped helper with big eyes and a little ✦ antenna.
+What it does
+Claude Code often works on its own for minutes, then waits for a "yes" I never saw. Nosy Notch shows every Claude Code session in the MacBook notch, with a small helper called Nosy living in it:
+- While Claude works, the notch shows the tool it's running and Nosy concentrates. When the context compacts, he gets dizzy.
+- When Claude asks for permission, Nosy waves and the notch shows Deny / Always allow / Allow. Claude's own dialog stays open too.
+- When a turn is done, he drips out of the notch and jumps for joy, with the first lines of the answer. You can read the conversation and reply right from the notch.
+- Hover for all sessions, context fill and your 5-hour / weekly limits. When nothing runs, he falls asleep in the notch.
+- Finished tasks give him energy, levels and a streak. He never dies and never guilt-trips you.
+- Also: music player, file shelf with AirDrop, calendar heads-ups, battery and AirPods status, focus timer. Works with Codex and Cursor too.
 
-- When the notch closes, Nosy jumps into it like a tar puddle and looks out with just his eyes (they follow your cursor).
-- While Claude works he concentrates; on long runs he sweats, when the context compacts he gets dizzy.
-- When Claude needs permission he waves – you click Allow / Deny right in the notch (or nod with AirPods).
-- When it's done he drips back out and jumps for joy. Nothing going on for a while? He falls asleep.
-- Every finished task feeds him: energy, levels, a daily streak, unlockable accessories. And on purpose: he never dies and never guilt-trips you. Worst case he's sleepy.
+How Claude Code helped
+Claude Code wrote the Swift/SwiftUI app, the local hook server, the npx installer and the website. My part was the idea, the character design and testing on my Mac. Some things it did on its own:
+- It read the hooks docs, then ran real Claude Code sessions with a test PermissionRequest hook. That's how it found out Claude's dialog stays open while the hook waits, which is what makes approving from the notch possible. It also saw that one "always allow" suggestion switches the session mode, so it filters that out.
+- When the app froze on launch, it profiled the process with sample and found an Apple Events permission check blocking the main thread.
+- For Nosy, it drew several rounds of sketches in the chat until we had the character, then built the "jumps into the notch like a tar puddle" animation in SwiftUI.
+- It built a recorder that renders the animations frame by frame on a virtual clock, which made the clips in this post.
+- A security pass it ran found that a website could post to the local server, so the server now rejects browser requests.
 
-New in this version: read Claude's answer and reply right from the notch, plus a file shelf with AirDrop, calendar heads-ups, battery and AirPods status and a focus timer.
-
-How Claude helped: it wrote the Swift/SwiftUI app, the hook server and the npx installer, tested the PermissionRequest hook against real sessions, and built the frame-by-frame recorder for the clips. My part: the idea, the character, and a lot of "cuter, calmer, bigger".
-
-Free and open source (MIT), everything stays on your Mac. Also works with Codex and Cursor.
-Try it: npx nosynotch (macOS 14+)
+Try it (free)
+macOS 14+ and Node: npx nosynotch installs the app, connects the hooks and starts it. npx nosynotch uninstall removes everything. Everything stays on your Mac, MIT licensed.
+Website: https://nosynotch.davidkubus.dev
 GitHub: https://github.com/ddkbs/nosynotch
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 
 ### r/ClaudeCode
-**Flair:** Showcase / Project · **Media:** `nosy-moods.mp4` (or `chat.mp4`)
+**Flair:** Built with Claude Code (or Showcase) · **Media:** `nosy-moods.mp4` (or `chat.mp4`)
+> Sub rule: simple project sharing goes in the weekly showcase thread. A standalone post must explain **what you built, how Claude Code was used and what you learned**. That's why this text is longer and has those three parts.
 
 **Title**
 ```
-Claude Code hooks → a notch helper that mirrors your session's state (and you can reply to Claude from the notch now)
+I built a little helper that lives in my MacBook notch and keeps an eye on Claude Code for me. Here's how Claude Code built it and what I learned
 ```
 
 **Text**
 ```
-Dev here. Nosy Notch turns Claude Code's hooks into a little character in the MacBook notch. Quick tour of how the states map:
+What I built
 
-- UserPromptSubmit / PreToolUse → Nosy concentrates, the notch shows the tool (Bash, Edit, Grep …) and the elapsed time
-- PreCompact → spiral eyes
-- PermissionRequest → he waves; the hook waits and the notch shows Deny / Always allow / Allow (Claude's own dialog stays open too). Answers carry a local secret, and "Always allow" never passes the setMode suggestion.
-- Stop → he jumps out of the notch, confetti, first lines of the answer
-- StopFailure → shocked ✕✕ eyes with the readable error (rate limit, overloaded …)
-- rate_limits at 100 % → exhausted; when a limit you'd nearly used up resets → "Claude is ready again"
+Nosy Notch is a free Mac app that turns the MacBook notch into a small window into your Claude Code sessions. A little helper called Nosy lives in it:
 
-New: hover a session to read the conversation, and reply right from the notch. Finished turns feed Nosy (energy, level, streak) – no guilt mechanics, he just gets sleepy.
+- While Claude works, the notch shows what it's doing right now and Nosy concentrates along with it
+- When Claude needs your permission, Nosy waves and you can click Allow or Deny right in the notch
+- When Claude is done, Nosy jumps out of the notch for joy and shows the start of the answer
+- You can read the conversation and reply to Claude directly from the notch
+- Hover to see all your sessions, how full each one is and how much of your usage limit is left
+- When nothing is running, Nosy falls asleep in the notch
+- Every finished task gives him energy, levels and a daily streak. He never dies and never makes you feel guilty
+- On the side: music player, a shelf for files with AirDrop, meeting reminders, battery and AirPods status and a focus timer
 
-Every hook is one curl to 127.0.0.1; if the app isn't running, curl fails instantly and Claude carries on. Installs into ~/.claude, $CLAUDE_CONFIG_DIR and every ~/.claude-* account folder. Usage + context come from a silent status line, only if you don't have your own.
+It also works with Codex and Cursor, and everything stays on your Mac.
 
-npx nosynotch · https://github.com/ddkbs/nosynotch
-Free, MIT, local.
+How I used Claude Code
 
-Feel free to try it out and leave your feedback.
+I didn't write the code myself. I described what I wanted, Claude Code built it, tested it and showed me the result. My job was the idea, testing on my Mac and a lot of feedback like "cuter", "calmer" or "bigger".
+
+- Instead of guessing how Claude Code's permission prompts behave, it ran real test sessions and found out that approving from the notch works while Claude's own prompt stays open.
+- For Nosy, it drew rough sketches in the chat, round after round, until the character felt right. Then it built the animations, including Nosy jumping into the notch like into a puddle.
+- It built its own little recorder to film the animations, so it could look at the result itself instead of asking me every time.
+- I ran a second Claude Code session in parallel for the promo (including this post) while the first one kept building.
+
+What I learned
+
+- Let it test for real. The best moments came when Claude Code tried something in a real session instead of trusting what it assumed.
+- Show, don't describe. Once it could record and look at its own animations, the feedback rounds got much shorter.
+- Sketch before you build. A few rough drawings saved hours of building the wrong character.
+- Keep a worklog. I use several Claude accounts without a shared chat history, so a short WORKLOG.md in the repo keeps every session up to date.
+- Small commits. Every finished piece gets its own commit, so I can undo exactly the part I don't like.
+
+Try it
+
+It's free and open source. On macOS 14+ run: npx nosynotch
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
 ```
 
 ### r/SideProject
@@ -134,8 +169,9 @@ Stack: Swift / SwiftUI, the agents' own hooks talking to a tiny loopback HTTP se
 
 npx nosynotch
 https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 
 ### r/opensource
@@ -158,9 +194,10 @@ Nosy Notch is a native Swift / SwiftUI app (macOS 14+, MIT) for the MacBook notc
 Privacy by design: a loopback-only HTTP server that rejects browser requests, approvals signed with a local secret, no telemetry, no account. Everything that needs a macOS permission is off until you turn it on.
 
 https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
 Issues and PRs welcome, especially support for more agents and new Nosy accessories.
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 
 ### r/codex (also r/ChatGPTCoding, r/OpenAI only in the project thread)
@@ -184,9 +221,10 @@ Codex has hooks now, so my notch app Nosy Notch supports it fully:
 Works with the Codex CLI and the ChatGPT app's Codex mode, side by side with Claude Code and Cursor. Note: trust the hooks once in Codex (Settings → Hooks or /hooks).
 
 npx nosynotch · https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
 Free, MIT, everything stays on your Mac.
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 
 ### r/vibecoding
@@ -212,8 +250,9 @@ I can read and answer the agent right from the notch too, and when I'm not codin
 Works with Claude Code, Codex and Cursor. Free, open source, built mostly with Claude Code.
 npx nosynotch
 https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 
 ### r/coolgithubprojects
@@ -243,9 +282,10 @@ I've been building Nosy Notch, a free notch app, and gave it an animated residen
 - Live equalizer: a Core Audio process tap on just the player's processes + vDSP FFT with per-band auto gain.
 
 Code (MIT): https://github.com/ddkbs/nosynotch
+Website: https://nosynotch.davidkubus.dev
 Happy to go deeper on any of these.
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 > ⚠ Adjust the technical details to what the main session actually builds (morph technique, drag detection, key handling).
 
@@ -278,12 +318,291 @@ Native Swift / SwiftUI, macOS 14+, Apple Silicon and Intel. Macs without a notch
 
 Install: npx nosynotch, or download from the GitHub release.
 https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
 
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 
 ---
+
+## 3c. Second wave (after the first week)
+
+Plain-text bodies, same style as above. Vary the media so the posts don't look copy-pasted.
+
+### r/AI_Agents
+**Flair:** check the sidebar (project / showcase) · **Media:** `nosy-notch-promo.mp4` or `attention.mp4`
+
+**Title**
+```
+Long-running coding agents have an attention problem. I put a little helper in my MacBook notch to fix mine
+```
+
+**Text**
+```
+Coding agents like Claude Code, Codex and Cursor work on their own for minutes, then stop and wait for a human who isn't looking. That gap was costing me more time than the agents saved.
+
+So I built Nosy Notch, a free Mac app that turns the notch into a small control spot for every agent session:
+
+- Live state per session: thinking, which tool it's running, compacting, waiting, error
+- Permission requests show up in the notch with Allow / Deny, and the answer goes straight back to the agent
+- When a turn ends you see the start of the answer, and you can read the conversation and reply from the notch
+- A green dot if you missed a result, plus one reminder after 5 minutes
+- Context fill per session and your usage limits, with a heads-up when a limit resets
+- Stays quiet when you're already looking at the agent's window
+
+A small helper called Nosy lives in the notch and shows all of this at a glance: he concentrates while the agent works, waves when it needs you and cheers when it's done.
+
+It works through each agent's own hooks and runs fully on your Mac.
+
+What do you want to see from an agent at a glance?
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/aipromptprogramming
+**Media:** `nosy-notch-promo.mp4`
+
+**Title**
+```
+I built a Mac app with Claude Code that tells me when my coding agent needs me (and lets me answer from the notch)
+```
+
+**Text**
+```
+If you run Claude Code, Codex or Cursor for longer tasks, you know the moment: you come back and it has been waiting for your "yes" for ten minutes.
+
+Nosy Notch puts that into the MacBook notch:
+- see what the agent is doing right now
+- Allow / Deny permission requests right there
+- read the answer and reply without switching windows
+- usage limits and context fill on hover
+
+A little helper named Nosy lives in the notch and reacts to everything, from concentrating to cheering. Finished tasks level him up.
+
+I built the whole thing with Claude Code: I described what I wanted and gave feedback, Claude Code wrote, tested and recorded it. Free and open source.
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/AIToolsTech
+**Media:** `nosy-notch-promo.mp4`
+
+**Title**
+```
+Nosy Notch: a free Mac app that shows Claude Code, Codex and Cursor in your MacBook notch
+```
+
+**Text**
+```
+What it is: a free, open-source macOS app for people who code with AI agents.
+
+What it does:
+- Shows live what your agent is doing, right in the notch
+- Lets you allow or deny its commands with one click
+- Shows the answer when it's done and lets you reply from the notch
+- Tracks your usage limits and how full each session's context is
+- Nosy, a small helper living in the notch, reacts to all of it and levels up with every finished task
+
+Extras: music player, file shelf with AirDrop, meeting reminders, battery and AirPods status, focus timer.
+
+Works with: Claude Code, Codex, Cursor. Runs locally, no account. Install with: npx nosynotch (macOS 14+)
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/aitools
+**Media:** `nosy-notch-promo.mp4`
+
+**Title**
+```
+Free tool: approve your AI coding agent's commands from the MacBook notch
+```
+
+**Text**
+```
+I made a free Mac app for anyone using Claude Code, Codex or Cursor.
+
+Your MacBook notch becomes a little status window: it shows what the agent is doing, asks you right there when it needs permission, and shows the answer when it's done, with a reply box. A small helper called Nosy lives in it and reacts along the way.
+
+No account, nothing leaves your Mac, open source. Install: npx nosynotch
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/IMadeThis
+**Media:** `nosy-notch-promo.mp4`
+
+**Title**
+```
+I made a tiny helper that lives in my MacBook notch
+```
+
+**Text**
+```
+His name is Nosy. He lives in the notch of my MacBook and keeps an eye on my AI coding tools for me.
+
+When the agent works, he concentrates. When it needs my permission, he waves and I click Allow right in the notch. When it's done, he jumps out and cheers, and I can read the answer and reply from there. When nothing happens for a while, he falls asleep.
+
+Every finished task gives him energy and levels, and he keeps a daily streak. On purpose he never dies and never makes you feel guilty.
+
+It's a free, open-source Mac app and works with Claude Code, Codex and Cursor.
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/alphaandbetausers
+**Media:** `nosy-notch-promo.mp4` · tone: asking for testers
+
+**Title**
+```
+Looking for testers: a free Mac app that puts your AI coding agent in the MacBook notch
+```
+
+**Text**
+```
+I'm the developer of Nosy Notch and I'm looking for people who use Claude Code, Codex or Cursor on a Mac to try it and tell me what's broken or confusing.
+
+What it does:
+- shows what your agent is doing in the notch
+- Allow / Deny permission requests from the notch
+- read the answer and reply without switching windows
+- usage limits and context fill on hover
+- a little helper called Nosy who reacts to everything and levels up with finished tasks
+- extras: music, file shelf with AirDrop, meeting reminders, battery, AirPods, focus timer
+
+Requirements: macOS 14+ and Node (for the installer).
+Install: npx nosynotch · Remove everything: npx nosynotch uninstall
+
+What I'd love feedback on: setup, anything that feels noisy or annoying, and what you'd want the notch to show next.
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/devtools
+**Media:** `attention.mp4` or `nosy-notch-promo.mp4`
+
+**Title**
+```
+Nosy Notch: Claude Code, Codex and Cursor status, approvals and replies in the MacBook notch
+```
+
+**Text**
+```
+A free, open-source macOS app (Swift / SwiftUI) for developers who work with coding agents.
+
+- Hooks into Claude Code, Codex and Cursor (one local curl per event; if the app isn't running, the agent just carries on)
+- Live status per session, several sessions and agents at once
+- Permission requests answered from the notch, signed with a local secret so no other process can answer for you
+- Read the conversation and reply from the notch
+- Usage limits and context fill, with an alert when a limit resets
+- No account, no telemetry, loopback only
+
+Plus a small animated helper, Nosy, who mirrors what your agent is doing.
+
+Install: npx nosynotch (macOS 14+). MIT licensed.
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/indiehackers
+**Media:** `nosy-notch-promo.mp4` · tone: story + learnings
+
+**Title**
+```
+I built a Mac app almost entirely with Claude Code. Here's what it does and what I learned
+```
+
+**Text**
+```
+What I built
+Nosy Notch, a free Mac app that turns the MacBook notch into a home for a little helper called Nosy. He keeps an eye on AI coding agents (Claude Code, Codex, Cursor): he waves when the agent needs your permission, you click Allow right in the notch, he cheers when it's done, and you can read the answer and reply from there. Finished tasks level him up. On the side: music, a file shelf with AirDrop, meeting reminders, battery and AirPods status, a focus timer.
+
+How I built it
+I didn't write the code myself. I described what I wanted, Claude Code built and tested it, and I gave feedback like "cuter", "calmer", "bigger". Even the character started as rough sketches in the chat.
+
+What I learned
+- A character changes everything. The first version was a plain status display and nobody cared. Nosy made people smile.
+- Free and local is the strongest argument. Most notch apps cost money; being free and open source is what gets people to try it.
+- Let the AI test for real. The best fixes came when Claude Code tried things in real sessions instead of assuming.
+- Keep a worklog. I use several Claude accounts, so a short WORKLOG.md keeps every session in sync.
+
+It's free and MIT licensed. Install: npx nosynotch
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/tamagotchi
+**Media:** `nosy.mp4` / `level-up.mp4` (Nosy close-up) · ⚠ check the sidebar first: if self-promotion isn't allowed, skip it or ask the mods
+
+**Title**
+```
+I made a little tamagotchi that lives in my MacBook notch and grows when my work gets done
+```
+
+**Text**
+```
+Disclosure: I made this, and it's free.
+
+Nosy is a tiny creature that lives in the notch at the top of a MacBook screen. Instead of feeding him by hand, he gets energy every time my AI coding tools finish a task. He levels up, keeps a daily streak and reacts to what's happening: he concentrates while work is running, waves when something needs me, cheers when it's done and falls asleep when nothing happens.
+
+The one rule I gave him: he never dies and never makes you feel guilty. Worst case, he's a bit sleepy.
+
+Honest note: he's made for people who code with AI tools (Claude Code, Codex, Cursor) on a Mac, that's what feeds him. I'd love to hear from real tamagotchi fans what would make him feel more alive.
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
+
+### r/virtualpets
+**Media:** `nosy.mp4` (dive into the notch) · ⚠ check the sidebar first
+
+**Title**
+```
+Meet Nosy, a virtual pet that lives in a MacBook notch and dives into it like a puddle
+```
+
+**Text**
+```
+Disclosure: I'm the one who made him. He's free.
+
+Nosy lives in the black notch at the top of a MacBook screen. When the notch closes, he hops in like he's jumping into a tar puddle and just his eyes peek out, following your cursor. When something happens, he drips back out.
+
+He has moods (focused, waving, cheering, sleepy, dizzy), energy, levels, a daily streak and little things to unlock. And he never dies and never guilt-trips you.
+
+He gets his energy from finished tasks of AI coding tools, so he's mostly for people who code on a Mac. What would you want a pet like this to do?
+
+https://github.com/ddkbs/nosynotch
+https://nosynotch.davidkubus.dev
+
+Feel free to try it out and leave your feedback!
+```
 
 ## 4. First comment of your own (post right after every post)
 
@@ -294,8 +613,9 @@ Some details for the curious:
 - Nosy's energy and streak are stored locally. He never dies – I wanted the cozy part of a tamagotchi without the guilt.
 - Not signed with an Apple Developer ID yet (ad-hoc signed), so macOS may ask once.
 Repo + every animation explained: https://github.com/ddkbs/nosynotch
+Website: https://nosynotch.davidkubus.dev
 
-Feel free to try it out and leave your feedback.
+Feel free to try it out and leave your feedback!
 ```
 
 ## 5. Replies to expected questions
@@ -321,7 +641,7 @@ Goal: you hardly have to do anything. Proposed setup, ready to set up as soon as
    - opens the subreddit, reads the current sidebar rules (karma, flair, megathread) and skips the sub if the post would break them,
    - fills in title, text, flair and the clip from `website/public/demo/` / `docs/gifs/`,
    - **stops before "Post" and asks you once** (also works from your phone). You reply "yes", and it posts the thread plus the first comment of your own (section 4).
-2. **Check-ins after 1 h and 24 h:** Claude reads the new comments, writes reply drafts in your style (ending with "Feel free to try it out and leave your feedback." where it fits), and posts them after your OK. Bug reports go straight into a list for the main session.
+2. **Check-ins after 1 h and 24 h:** Claude reads the new comments, writes reply drafts in your style (ending with "Feel free to try it out and leave your feedback!" where it fits), and posts them after your OK. Bug reports go straight into a list for the main session.
 3. **Logbook** in `promo/POSTED.md`: sub, time, link, upvotes, comments, stars before/after.
 
 **Why not fully without you:**

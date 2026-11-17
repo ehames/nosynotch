@@ -42,34 +42,43 @@ enum HookInstaller {
         event == "PermissionRequest" ? 600 : value
     }
 
+    /// `X-Host-Pid`: the hook shell's parent (the agent's process) – lets the app find the exact app instance a
+    /// session runs in, even with two copies of the same app open. Not for Codex: changed Codex hooks need to be
+    /// trusted again.
+    static func hostPidHeader(_ agent: Agent) -> [String] {
+        agent == .codex ? [] : ["-H \"X-Host-Pid: $PPID\""]
+    }
+
     static func permissionCommand(port: UInt16, agent: Agent = .claude) -> String {
         let query = agent == .claude ? "src=\(marker)" : "src=\(marker)&agent=\(agent.rawValue)"
         let token = ApprovalToken.value
-        return [
+        return ([
             "r=$(curl -s -m 590 -X POST",
             "-H 'Content-Type: application/json'",
             "-H 'Expect:'",
             "-H \"X-Term-Program: ${TERM_PROGRAM:-}\"",
             "-H \"X-Bundle-Id: ${__CFBundleIdentifier:-}\"",
+        ] + hostPidHeader(agent) + [
             "--data-binary @-",
             "'http://127.0.0.1:\(port)/permission?\(query)'",
             "2>/dev/null);",
             "case \"$r\" in \"\(token) \"*) printf '%s' \"${r#\(token) }\";; esac; true",
-        ].joined(separator: " ")
+        ]).joined(separator: " ")
     }
 
     static func command(port: UInt16, agent: Agent = .claude) -> String {
         let query = agent == .claude ? "src=\(marker)" : "src=\(marker)&agent=\(agent.rawValue)"
-        return [
+        return ([
             "curl -s -m 2 -X POST",
             "-H 'Content-Type: application/json'",
             "-H 'Expect:'",
             "-H \"X-Term-Program: ${TERM_PROGRAM:-}\"",
             "-H \"X-Bundle-Id: ${__CFBundleIdentifier:-}\"",
+        ] + hostPidHeader(agent) + [
             "--data-binary @-",
             "'http://127.0.0.1:\(port)/event?\(query)'",
             ">/dev/null 2>&1 || true",
-        ].joined(separator: " ")
+        ]).joined(separator: " ")
     }
 
     /// All Claude Code config directories on this Mac, `~/.claude` first.
@@ -125,18 +134,66 @@ enum HookInstaller {
         }
     }
 
+    /// Hooks from an older version (connected, but not the current command) get the current one – only where our
+    /// hooks already are, nothing new gets connected. Returns the files that were updated.
+    @discardableResult
+    static func upgradeOutdated(port: UInt16) -> [URL] {
+        var updated: [URL] = []
+        for url in settingsURLs where hasOurHooks(at: url) && !isInstalled(at: url) {
+            if (try? install(port: port, at: url)) != nil { updated.append(url) }
+        }
+        if Cursor.hasOurHooks && !Cursor.isInstalled, (try? Cursor.install(port: port)) != nil {
+            updated.append(Cursor.hooksURL)
+        }
+        return updated
+    }
+
+    static func hasOurHooks(at url: URL) -> Bool {
+        guard let hooks = (try? load(url))?["hooks"] as? [String: Any] else { return false }
+        return hooks.values.contains { (($0 as? [[String: Any]]) ?? []).contains(where: isOurs) }
+    }
+
     static func install(port: UInt16 = EventServer.defaultPort) throws {
-        for url in settingsURLs { try install(port: port, at: url) }
-        if Preferences.usageEnabled { try installStatusLine(port: port) }
+        // One load-modify-save per file: a second save would back up our own hooks over the real backup.
+        let usage = Preferences.usageEnabled
+        for url in settingsURLs {
+            var settings = try load(url)
+            addHooks(to: &settings, port: port)
+            if usage { addStatusLine(to: &settings, port: port) }
+            try save(settings, to: url)
+        }
     }
 
     // MARK: Status line (usage limits)
 
     /// Claude Code passes rate limits (Pro/Max) only to its status line command. We add a silent one that
-    /// forwards the JSON, preserving an existing status line and its output.
+    /// forwards the JSON, or, if you have a status line of your own, feed it the same JSON first.
     static func statusLineCommand(port: UInt16) -> String {
         "curl -s -m 1 -X POST -H 'Content-Type: application/json' -H 'Expect:' --data-binary @- "
             + "'http://127.0.0.1:\(port)/usage?src=\(marker)' >/dev/null 2>&1; true"
+    }
+
+    /// In every command of ours, never in yours (a path with "nosynotch" in it isn't enough).
+    static let usageMark = "/usage?src=\(marker)"
+    static let wrapperHead = "nosynotch_in=$(cat; printf .); nosynotch_in=${nosynotch_in%.}; "
+
+    /// Your own status line, untouched, after ours: your command goes in verbatim on its own lines inside
+    /// `{ … }` (no quoting to get wrong), its output and exit status stay yours. Must match the CLI.
+    static func statusLineCommand(port: UInt16, wrapping original: String) -> String {
+        wrapperHead + "printf '%s' \"$nosynotch_in\" | { \(statusLineCommand(port: port)); }; "
+            + "printf '%s' \"$nosynotch_in\" | {\n\(original)\n}"
+    }
+
+    /// Your command back out of the wrapper; nil if `command` isn't one.
+    static func unwrappedStatusLine(_ command: String) -> String? {
+        guard (command.hasPrefix(wrapperHead) || command.hasPrefix("nosynotch_in=$(cat); ")), command.contains(usageMark), command.hasSuffix("\n}"),
+              let newline = command.firstIndex(of: "\n") else { return nil }
+        return String(command[command.index(after: newline)..<command.index(command.endIndex, offsetBy: -2)])
+    }
+
+    /// A trailing backslash would swallow the closing brace; such a command stays as it is.
+    private static func canWrap(_ command: String) -> Bool {
+        !command.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("\\")
     }
 
     enum StatusLine: Equatable {
@@ -145,47 +202,63 @@ enum HookInstaller {
 
     static func statusLine(at url: URL) -> StatusLine {
         guard let line = (try? load(url))?["statusLine"] as? [String: Any] else { return .none }
-        return ((line["command"] as? String) ?? "").contains(marker) ? .ours : .theirs
-    }
-
-    /// Stored with the wrapper so reinstalling is idempotent and uninstall restores every option.
-    static let originalStatusLineKey = "nosynotchOriginalStatusLine"
-
-    static func combinedStatusLineCommand(original: String, port: UInt16) -> String {
-        let quoted = "'" + original.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
-        // The sentinel preserves trailing newlines stripped by shell command substitution.
-        return "nosynotch_payload=$(cat; printf '.'); nosynotch_payload=${nosynotch_payload%.}; "
-            + "printf '%s' \"$nosynotch_payload\" | (" + statusLineCommand(port: port) + "); "
-            + "printf '%s' \"$nosynotch_payload\" | /bin/sh -c " + quoted
+        return ((line["command"] as? String) ?? "").contains(usageMark) ? .ours : .theirs
     }
 
     static func installStatusLine(port: UInt16 = EventServer.defaultPort) throws {
         for url in settingsURLs {
             var settings = try load(url)
-            let current = settings["statusLine"] as? [String: Any]
-            let ours = statusLine(at: url) == .ours
-            let original = ours ? current?[originalStatusLineKey] as? [String: Any] : current
-            if let original {
-                guard original["type"] as? String == "command",
-                      let command = original["command"] as? String else { continue }
-                var line = original
-                line["command"] = combinedStatusLineCommand(original: command, port: port)
-                line[originalStatusLineKey] = original
-                settings["statusLine"] = line
-            } else {
-                // Leave unrecognized status line formats untouched.
-                if settings["statusLine"] != nil && !ours { continue }
-                settings["statusLine"] = ["type": "command", "command": statusLineCommand(port: port)]
-            }
-            try save(settings, to: url)
+            if addStatusLine(to: &settings, port: port) { try save(settings, to: url) }
+        }
+    }
+
+    /// Our silent status line, or yours wrapped so it gets the JSON too. Returns whether anything changed.
+    @discardableResult
+    private static func addStatusLine(to settings: inout [String: Any], port: UInt16) -> Bool {
+        guard var line = settings["statusLine"] as? [String: Any] else {
+            settings["statusLine"] = ["type": "command", "command": statusLineCommand(port: port)]
+            return true
+        }
+        if let original = line["nosynotchOriginalStatusLine"] as? [String: Any] {
+            settings["statusLine"] = original
+            _ = addStatusLine(to: &settings, port: port)
+            return true
+        }
+        // Only command status lines can be wrapped; anything else is left alone.
+        guard (line["type"] as? String) == "command", let command = line["command"] as? String else { return false }
+        let next: String
+        if let original = unwrappedStatusLine(command) {
+            next = statusLineCommand(port: port, wrapping: original)
+        } else if command.contains(usageMark) {
+            next = statusLineCommand(port: port)
+        } else {
+            guard canWrap(command) else { return false }
+            next = statusLineCommand(port: port, wrapping: command)
+        }
+        guard next != command else { return false }
+        line["command"] = next
+        settings["statusLine"] = line
+        return true
+    }
+
+    /// Gives your status line back exactly as it was, or removes our silent one.
+    private static func removeStatusLine(from settings: inout [String: Any]) {
+        guard var line = settings["statusLine"] as? [String: Any], let command = line["command"] as? String,
+              command.contains(usageMark) else { return }
+        if let original = line["nosynotchOriginalStatusLine"] as? [String: Any] {
+            settings["statusLine"] = original
+        } else if let original = unwrappedStatusLine(command) {
+            line["command"] = original
+            settings["statusLine"] = line
+        } else {
+            settings["statusLine"] = nil
         }
     }
 
     static func uninstallStatusLine() throws {
         for url in settingsURLs where statusLine(at: url) == .ours {
             var settings = try load(url)
-            let line = settings["statusLine"] as? [String: Any]
-            settings["statusLine"] = line?[originalStatusLineKey]
+            removeStatusLine(from: &settings)
             try save(settings, to: url)
         }
     }
@@ -197,6 +270,11 @@ enum HookInstaller {
 
     private static func install(port: UInt16, at url: URL) throws {
         var settings = try load(url)
+        addHooks(to: &settings, port: port)
+        try save(settings, to: url)
+    }
+
+    private static func addHooks(to settings: inout [String: Any], port: UInt16) {
         var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
 
         for event in events {
@@ -211,7 +289,6 @@ enum HookInstaller {
         }
 
         settings["hooks"] = hooks
-        try save(settings, to: url)
     }
 
     private static func uninstall(at url: URL) throws {
@@ -253,11 +330,16 @@ enum HookInstaller {
         let fm = FileManager.default
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
 
-        // Keep a backup of whatever was there before we touched it.
+        // Keep a backup of the file as it was before we touched it. Once our hooks are in, the backup stays:
+        // reconnecting would otherwise replace it with a copy that already has them.
         if fm.fileExists(atPath: url.path) {
             let backup = url.appendingPathExtension("nosynotch.bak")
-            try? fm.removeItem(at: backup)
-            try fm.copyItem(at: url, to: backup)
+            let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+            let touched = ([marker] + legacyMarkers).contains { text.contains($0) }
+            if !touched || !fm.fileExists(atPath: backup.path) {
+                try? fm.removeItem(at: backup)
+                try fm.copyItem(at: url, to: backup)
+            }
         }
 
         let data = try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .withoutEscapingSlashes])
@@ -384,6 +466,7 @@ extension HookInstaller {
                     "-H 'Expect:'",
                     "-H \"X-Term-Program: ${TERM_PROGRAM:-}\"",
                     "-H \"X-Bundle-Id: ${__CFBundleIdentifier:-}\"",
+                    "-H \"X-Host-Pid: $PPID\"",
                     "--data-binary @-",
                     "'http://127.0.0.1:\(port)/permission?src=\(marker)&agent=cursor'",
                     "2>/dev/null);",
@@ -397,6 +480,7 @@ extension HookInstaller {
                 "-H 'Expect:'",
                 "-H \"X-Term-Program: ${TERM_PROGRAM:-}\"",
                 "-H \"X-Bundle-Id: ${__CFBundleIdentifier:-}\"",
+                "-H \"X-Host-Pid: $PPID\"",
                 "--data-binary @-",
                 "'http://127.0.0.1:\(port)/event?src=\(marker)&agent=cursor'",
                 ">/dev/null 2>&1; printf '%s' '\(reply)'",
@@ -405,6 +489,11 @@ extension HookInstaller {
 
         private static func isOurs(_ entry: [String: Any]) -> Bool {
             ((entry["command"] as? String) ?? "").contains(marker)
+        }
+
+        static var hasOurHooks: Bool {
+            guard let hooks = (try? load(hooksURL))?["hooks"] as? [String: Any] else { return false }
+            return hooks.values.contains { (($0 as? [[String: Any]]) ?? []).contains(where: isOurs) }
         }
 
         /// `isInstalled`, re-read at most every 30 s (asked for every Cursor event).

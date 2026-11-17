@@ -34,6 +34,10 @@ enum Preferences {
         static let focusMutesAlerts = "focusMutesAlerts"
         static let calendarEnabled = "calendarEnabled"
         static let replyMode = "replyMode"
+        static let clockEnabled = "clockEnabled"
+        static let clockZone = "clockZone"
+        static let portsEnabled = "portsEnabled"
+        static let portsShowAll = "portsShowAll"
     }
 
     private static let defaults = UserDefaults.standard
@@ -74,6 +78,10 @@ enum Preferences {
             Key.focusMutesAlerts: true,
             Key.calendarEnabled: false,
             Key.replyMode: "type",
+            Key.clockEnabled: true,
+            Key.clockZone: "",
+            Key.portsEnabled: false,
+            Key.portsShowAll: false,
         ])
     }
 
@@ -180,6 +188,21 @@ enum Preferences {
     /// How a reply from the notch reaches the session: "type" = paste it into the session's app (needs
     /// Accessibility), "background" = `claude --resume` / `codex exec resume`.
     static var replyMode: String { defaults.string(forKey: Key.replyMode) ?? "type" }
+
+    /// The time in the notch while nothing else is going on.
+    static var clockEnabled: Bool { defaults.object(forKey: Key.clockEnabled) as? Bool ?? true }
+
+    /// The second time zone on the big clock, if any.
+    static var clockZone: ClockZone? {
+        let identifier = defaults.string(forKey: Key.clockZone) ?? ""
+        return ClockZone.all.first { $0.identifier == identifier }
+    }
+
+    /// Listening ports in the hover view, with who opened them and ✕ to quit them.
+    static var portsEnabled: Bool { defaults.bool(forKey: Key.portsEnabled) }
+
+    /// Also list apps (Spotify, AirPlay, Raycast …), not only dev servers.
+    static var portsShowAll: Bool { defaults.bool(forKey: Key.portsShowAll) }
 
     /// Drag files onto the notch: Shelf and AirDrop.
     static var shelfEnabled: Bool { defaults.object(forKey: Key.shelfEnabled) as? Bool ?? true }

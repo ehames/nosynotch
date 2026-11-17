@@ -11,7 +11,7 @@ const helpers = source.slice(source.indexOf('const STATUS_LINE_COMMAND ='), sour
 function harness(current) {
   const context = vm.createContext({ PORT: 7823, MARKER: 'nosynotch', current });
   vm.runInContext(helpers, context);
-  return { context, install: () => vm.runInContext('usageStatusLine(current)', context) };
+  return { context, install: () => vm.runInContext('withUsageStatusLine(current)', context) };
 }
 
 test('preserves options and wraps only once across reinstalls', () => {
@@ -19,7 +19,7 @@ test('preserves options and wraps only once across reinstalls', () => {
   const h = harness(original);
   const wrapped = h.install();
   assert.equal(wrapped.padding, 3);
-  assert.equal(wrapped.nosynotchOriginalStatusLine, original);
+  assert.equal(wrapped.nosynotchOriginalStatusLine, undefined);
   h.context.current = wrapped;
   assert.equal(h.install().command, wrapped.command);
 });
@@ -53,7 +53,7 @@ test('uninstall restores the exact original configuration', () => {
   const end = source.indexOf('\nfunction ', start + 1);
   vm.runInContext(source.slice(start, end), h.context);
   vm.runInContext("removeHooksIn('settings.json')", h.context);
-  assert.equal(settings.statusLine, original);
+  assert.equal(JSON.stringify(settings.statusLine), JSON.stringify(original));
 });
 
 test('keeps unsupported formats and supports an absent or legacy silent status line', () => {
@@ -63,4 +63,15 @@ test('keeps unsupported formats and supports an absent or legacy silent status l
   const next = harness(first).install();
   assert.equal(first.command, next.command);
   assert.equal(next.nosynotchOriginalStatusLine, undefined);
+});
+
+
+test('migrates the previous local wrapper without losing the custom command', () => {
+  const original = { type: 'command', command: 'cat', padding: 4 };
+  const previous = { type: 'command', command: 'curl /usage?src=nosynotch', nosynotchOriginalStatusLine: original };
+  const wrapped = harness(previous).install();
+  assert.equal(wrapped.padding, 4);
+  assert.equal(wrapped.nosynotchOriginalStatusLine, undefined);
+  const h = harness(wrapped);
+  assert.equal(vm.runInContext('unwrapStatusLine(current.command)', h.context), original.command);
 });

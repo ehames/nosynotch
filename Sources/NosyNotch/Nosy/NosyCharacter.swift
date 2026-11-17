@@ -38,7 +38,7 @@ enum NosyMood: Equatable {
 
 /// Things Nosy can wear, unlocked by level.
 enum NosyAccessory: String, CaseIterable, Identifiable {
-    case none, headphones, glasses, cap, bow
+    case none, headphones, glasses, cap, bow, party, crown, halo
 
     var id: String { rawValue }
 
@@ -49,17 +49,40 @@ enum NosyAccessory: String, CaseIterable, Identifiable {
         case .glasses: return "Glasses"
         case .cap: return "Cap"
         case .bow: return "Bow"
+        case .party: return "Party hat"
+        case .crown: return "Crown"
+        case .halo: return "Halo"
         }
     }
 
-    /// Level needed to wear it.
-    var level: Int {
+    /// What it takes to wear it.
+    enum Unlock: Equatable {
+        case level(Int)
+        case streak(days: Int)
+        case tasks(Int)
+    }
+
+    static let headphonesLevel = 2
+
+    var unlock: Unlock {
         switch self {
-        case .none: return 1
-        case .headphones: return 2
-        case .glasses: return 4
-        case .cap: return 6
-        case .bow: return 8
+        case .none: return .level(1)
+        case .headphones: return .level(Self.headphonesLevel)
+        case .glasses: return .level(4)
+        case .cap: return .level(6)
+        case .bow: return .level(8)
+        case .party: return .tasks(100)
+        case .crown: return .streak(days: 7)
+        case .halo: return .streak(days: 30)
+        }
+    }
+
+    /// "Lv 4", "7 days", "50 tasks" on a locked item.
+    var lockedLabel: String {
+        switch unlock {
+        case .level(let level): return "Lv \(level)"
+        case .streak(let days): return "\(days) days"
+        case .tasks(let tasks): return "\(tasks) tasks"
         }
     }
 }
@@ -173,7 +196,31 @@ enum NosyTime {
         return local >= at && local < at + 0.13
     }
 
+    /// The next moment after `t` at which `isBlinking` flips (a blink starts or ends).
+    static func nextBlinkEdge(after t: TimeInterval, seed: Double = 0) -> TimeInterval {
+        let period = 3.6
+        var cycle = floor(t / period)
+        while true {
+            let at = cycle * period + fract(sin((cycle + seed) * 12.9898) * 43_758.5453) * (period - 0.4)
+            // A hair past each edge, so `isBlinking` sees the new side despite rounding.
+            for edge in [at, at + 0.13] where edge + 0.001 > t { return edge + 0.001 }
+            cycle += 1
+        }
+    }
+
     static func fract(_ x: Double) -> Double { x - floor(x) }
+}
+
+/// Redraws only when Nosy blinks: for moods where the eyes otherwise hold still.
+struct NosyBlinkSchedule: TimelineSchedule {
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+        var next: Date? = startDate
+        return AnyIterator {
+            guard let current = next else { return nil }
+            next = Date(timeIntervalSinceReferenceDate: NosyTime.nextBlinkEdge(after: current.timeIntervalSinceReferenceDate))
+            return current
+        }
+    }
 }
 
 // MARK: - Eyes

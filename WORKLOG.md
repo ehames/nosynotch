@@ -1,5 +1,53 @@
 # WORKLOG
 
+## 2026-11-13 (Release v0.4.0)
+- Branch `feat/idle-clock-node-download` per Fast-Forward nach `main`, Version 0.4.0 (statt 0.3.1, weil Uhr, Next Prompt, Fortschritt und Ports neue Features sind), Tag `v0.4.0` gepusht. CI grün, GitHub-Release mit Universal-Binary da. Issues #1 #2 #4 #6 #9 per „Fixes #n“ automatisch geschlossen; PRs #5 #7 #8 #10 ohne Kommentar geschlossen (Davids Wunsch).
+- Vorher lokal: Universal-Release-Build + Smoke-Test im Fake-Home auf Port 7899 (Health, Event, Quit), echte Settings unverändert.
+- `npm publish` von David selbst (CI ohne `NPM_TOKEN` übersprungen): erst 404 = abgelaufener Token in `~/.npmrc` (npm meldet das als 404), nach `npm login` + Browser-Bestätigung beim Publish → `+ nosynotch@0.4.0`. Registry zeigte direkt danach noch 0.3.0 (Verzögerung).
+- Historie umgeschrieben (David wollte ehames nicht als Contributor): `Co-authored-by: Edgardo Hames` aus 3 Commits entfernt (filter-branch, Inhalt identisch), `main`, Feature-Branch und Tag `v0.4.0` force-gepusht; Release + npm unverändert. Erneut ausgelöster Tag-Build abgebrochen (Release gibt es schon). Lokales Backup: Branch `backup/pre-rewrite`. Künftig keine Co-Autor-Zeilen für Fremd-Fixes.
+- **Offen:** Neue Features weiter nicht auf echter Notch getestet. Website-Deploy nach Push auf main nicht geprüft. #3 (opencode) unbeantwortet.
+
+## 2026-11-13 (Issues #1, #2, #4, #6, #9 – CPU, Backup, Statuszeile)
+- **Übernommen von ehames** (Co-authored-by, lokal auf diesem Branch): #5 Settings-Fenster wird beim Schließen freigegeben (~46 % CPU im Leerlauf), #7 Splash wird nach dem letzten Frame entfernt (~5 % CPU), #8 `@Entry` ausgeschrieben → Build nur mit Command Line Tools + 26.5-SDK klappt (getestet).
+- **Eigen:** Nosys Augen im Flügel (auch neben der Uhr) zeichnen in ruhigen Stimmungen nur noch beim Blinzeln (`NosyBlinkSchedule`, ~0,6/s statt 30/s, Kanten per Skript geprüft), Schlaf-Zzz mit 20 FPS.
+- **#2:** Install = ein Laden-Ändern-Speichern pro Datei; `.nosynotch.bak` wird nie durch eine Datei mit unseren Hooks ersetzt (App + CLI).
+- **#9 selbst gelöst, PR #10 geschlossen (ohne Kommentar):** eigene Statuszeile wird wörtlich in `{ … }` eingebettet (kein Quoting, keine Zusatz-Keys in settings.json – Claude Code könnte unbekannte Keys anmeckern). Erkennung über `/usage?src=nosynotch` statt nur „nosynotch“ (sonst zählt ein Pfad mit nosynotch als unsere). Befehle mit `\` am Ende bleiben unangetastet. Getestet im Fake-Home (env -i + CFFIXED_USER_HOME, echte Dateien per mtime geprüft): Ausgabe/stderr/Exit bleiben, JSON kommt an, sh + zsh, idempotent, Trennen stellt exakt wieder her, App und CLI erzeugen denselben Befehl.
+- **Nicht getestet:** CPU-Messung im echten Leerlauf (App nicht neu installiert – Bedienungshilfen-Recht), echte Claude-Statuszeile live.
+- **Offen:** Branch pushen/mergen (38+7 Commits, nur lokal), danach PRs #5, #7, #8 schließen und Issues beantworten; #3 (opencode) nur beantworten.
+
+## 2026-11-12 (Offene Ports)
+- **Ports** (`Ports.swift`, `Views/PortViews.swift`): lauschende TCP-Ports per libproc (kein `lsof`), Elternkette per `sysctl` (libproc scheitert an root-Prozessen wie `login`). Zeigt Port, was es ist (Skript hinter node/python, z. B. „vite“), Ordner (cwd), wer es gestartet hat (Agent + erste App in der Kette), nur-localhost vs. Netzwerk (🌐). Klick öffnet `localhost:PORT`, ✕ = SIGTERM, nach 2 s SIGKILL (mit Startzeit-Check gegen PID-Wiederverwendung).
+- Entscheidungen: Standard nur Dev-Prozesse (von Agent/Terminal/Editor gestartet oder kein App-Prozess); Agents selbst und NosyNotch ausgeblendet, „Include apps“ zeigt den Rest. Apps fragen vor dem Beenden („Quit“-Bestätigung im Chip). Nur eigene Prozesse sichtbar, root-Dienste gar nicht – kein Passwort nötig. Settings → Extras, Standard aus (bei David per `defaults write` an). Session-Zeile zeigt `:5173`, wenn der Agent der Session den Server gestartet hat (PID in der Kette, sonst gleicher Ordner + Agent).
+- `NosyNotch --ports` listet dasselbe im Terminal. Recorder-Szene `ports` + `docs/gifs/ports.gif`; im Recorder wird nie ein echter Prozess beendet.
+- Geprüft: Scan gegen echte Prozesse (vite aus Claude, Raycast-Backend, Spotify, ControlCenter, ollama …), Beenden eines Test-Servers (anderer Prozess auf gleichem Port blieb), Offscreen-Render. Installiert in `build/Nosy Notch.app`, Nosy-Level unverändert (Backup: `~/Desktop/nosynotch-defaults-backup-2026-11-12.plist`).
+- **Nicht getestet:** echtes Hovern/Klicken auf der Notch, Bestätigungs-Flow mit echter Maus.
+- **Offen:** Bedienungshilfen-Recht nach Neubau neu setzen. GIF nicht im README-Raster, Website zeigt Ports nicht. Branch weiter nur lokal.
+
+## 2026-11-08 (Next Prompt, Fortschritt, schlauere Uhr, Garderobe)
+- **Next Prompt** (`ReplyQueue.swift`): Antwort während der Agent arbeitet oder wartet geht in die Warteschlange (max. 3, ✕ pro Eintrag), nach jedem `Stop` genau eine. Entscheidungen: Einfügen wartet bis 1,5 s ohne Tastendruck, nicht bei gesperrtem Bildschirm, danach Fokus zurück zur vorherigen App, denn sonst würde es mitten ins Tippen fahren. Nach dem Senden blockiert `inFlight` bis `UserPromptSubmit`, damit die 5-Minuten-Erinnerung (auch `.finished`) nichts doppelt schickt.
+- **Fortschritt** (`TodoProgress` in `Session.swift`): liest `TodoWrite`, `TaskCreate`/`TaskUpdate` (Formate aus echten Transkripten geprüft), Codex `update_plan` und `*__update_plan` der Desktop-App. Flügel: Icon + „3/7“, ab 10 Schritten nur die Zahl. Fertige Liste wird beim nächsten Prompt geleert.
+- **Uhr:** Countdown „in 8m“ in den letzten 15 min vor einem Termin (nur mit Kalender an), zweite Zeitzone aus fester Stadtliste auf der großen Uhr (Settings → Extras).
+- **Garderobe:** War schon an Level gekoppelt (mein Vorschlag war da ungenau). Neu: Ziele über besten Streak und Aufgabenzahl, Party-Hut (100 Tasks), Krone (7 Tage), Heiligenschein (30 Tage), „✦ New: Crown“ auf der Done-Karte. Bug behoben: `NosyFigure` prüfte Level selbst, die Vorschaubilder (level 1) zeigten nie ein Accessoire; Prüfung jetzt in `NosyPet.wearing`.
+- Geprüft: Offscreen-Renders aller neuen Zustände, Kompilat-Check aller Task-Listen-Formate, Queue-Ablauf im Recorder mit Stub statt echtem Einfügen.
+- **Nicht getestet:** echtes Einfügen aus der Queue mit Fokus-Rückgabe, CGEvent-Tippruhe, echter Kalender-Countdown, alles auf echter Notch.
+- **Offen:** alles auf Branch `feat/idle-clock-node-download`, nur lokal, nichts gemergt. Website zeigt die neuen Features noch nicht. `docs/gifs/settings.gif` ist nicht neu aufgenommen.
+
+## 2026-11-08 (Uhr im Leerlauf, Node-Download)
+- **Uhr** (`Views/IdleClock.swift`, neuer Zustand `.clock`, niedrigste Priorität vor `.peek`/`.hidden`): rechter Flügel Zeit, links Nosy (ohne Nosy: Wochentag), Doppelpunkt atmet in Gold, Ziffern rollen, dunkler wenn Nosy schläft. Hover: große Uhr + Datum statt „No active sessions“. Settings → Extras, Standard an.
+- Entscheidungen: „Nichts läuft“ = kein Agent, keine angezeigte Musik, kein Timer, nichts Ungesehenes. Nur unter echter Notch (sonst dauerhafte schwarze Pille). Im Recorder nur in Szene `clock`, damit die anderen GIFs gleich bleiben. Zeit schlägt `.peek`, sonst flackert sie bei Mausnähe.
+- Geprüft per Offscreen-Render (Uhr, Hover, Agent übernimmt, Uhr kommt zurück) und `docs/gifs/clock.gif`. **Nicht** auf echter Notch getestet.
+- Achtung: Der rechte Flügel (46 pt) liegt jetzt dauerhaft über Menüleisten-Icons direkt neben der Notch.
+- **Website:** `GetNode`-Link holt live die neueste LTS aus `nodejs.org/dist/index.json` (CORS offen) und verlinkt direkt die universelle `.pkg`; Fallback `nodejs.org/en/download`. Im Hero, in der Install-Karte, auf der Copied-Karte und im Finale. Browser-Test ok (v26.13.0).
+- **Offen:** Branch `feat/idle-clock-node-download` nicht gemergt/gepusht; Uhr braucht Release, Website geht erst mit Push auf `main` live. Uhr nicht im Website-Grid „Not just agents“ (7. Kachel würde das 3er-Raster brechen).
+
+## 2026-11-07 (Reply bei zwei Claude-Instanzen)
+- Ursache: David hat zwei Instanzen von `Claude.app` (gleiche Bundle-ID, zweite mit `--user-data-dir=…/Claude-Zweit`). Reply/Klick hat per Bundle-ID die erste aktiviert → falsches Fenster.
+- Fix: Claude- und Cursor-Hooks schicken `X-Host-Pid: $PPID`; die App geht die Prozesskette hoch bis zur ersten regulären App (`TerminalActivator.hostApp`) und aktiviert genau die. Codex-Hooks bewusst unverändert (geänderte Hooks müssten in Codex neu vertraut werden). CLI baut identischen Befehl (geprüft).
+- App ersetzt beim Start eigene veraltete Hooks durch den aktuellen Befehl (nur wo schon verbunden). `~/.claude` und `~/.claude-zweit` sind aktualisiert.
+- Panne beim Testen: `--install-hooks` mit `CFFIXED_USER_HOME` hat wegen `CLAUDE_CONFIG_DIR` echte Dateien angefasst; `~/.cursor/hooks.json` aus dem Backup zurückgesetzt (war leer), `~/.claude-zweit` nur eigene Hooks geändert.
+- Nach jedem lokalen Build: Bedienungshilfen-Recht für die Dev-App neu setzen (neue ad-hoc-Signatur), sonst kann Reply nicht tippen.
+- **Offen:** Reply real testen; für andere Nutzer braucht es ein Release (v0.3.1) + npm, sonst fehlt die PID im Hook. Nicht gepusht.
+
 ## 2026-11-07 (Nosy + Extras, v0.3.0 vorbereitet)
 - **Nosy** (`Sources/NosyNotch/Nosy/`): Figur in SwiftUI (Bohnen-Körper, Stummelarme, Füßchen, ✦-Antenne, 15 Stimmungen, Accessoires), 8 Farben (Standard Obsidian = Randlicht in Agentenfarbe). Design in 3 Runden mit David abgestimmt (`--nosy-sheet <png>` rendert alle Stimmungen/Farben). Augen im linken Flügel statt Agent-Glyphe, folgen der Maus; Peek bei Maus in der Nähe; schläft nach 10 min (nachts 2 min); hängt unter offener Notch, taucht beim Schließen wie in Teer ein (Splash). Klick = kichern.
 - **Tamagotchi** (`NosyPet`): Energie/XP/Level/Streak in UserDefaults, fertige Tasks füttern (Demo nicht), Energie-Boden 0,12, keine Schuldgefühle. Level-up-Pill auf der Done-Karte. Settings-Seite „Nosy“ (an/aus, Fortschritt + Reset, Farbe, Garderobe).

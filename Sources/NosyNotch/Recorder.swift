@@ -32,6 +32,8 @@ final class Recorder {
         var usage = false
         /// Seconds after which a nearly used-up 5-hour limit "resets".
         var limitResetAt: TimeInterval?
+        /// Show the idle clock, starting at this time of day.
+        var clockAt: (hour: Int, minute: Int, second: Int)?
         let steps: [(TimeInterval, HookEvent)]
         /// Anything else to do with the model at a given moment (drag files, plug in power, …).
         var actions: [(TimeInterval, @MainActor (NotchViewModel) -> Void)] = []
@@ -78,7 +80,9 @@ final class Recorder {
 
     private func record(_ scene: Scene, completion: @escaping () -> Void) {
         // Everything below – store dates, flash timeouts, the scripted events – runs on the virtual clock.
-        let start = Date()
+        let start = scene.clockAt.flatMap {
+            Calendar.current.date(bySettingHour: $0.hour, minute: $0.minute, second: $0.second, of: Date())
+        } ?? Date()
         Clock.startVirtual(at: start)
         let clock = RecordingClock(date: start)
 
@@ -88,6 +92,8 @@ final class Recorder {
         model.notchSize = CGSize(width: 185, height: 32)
         model.onNoticeAction = { _ in }
         model.hasPhysicalNotch = true
+        model.recordsClock = scene.clockAt != nil
+        model.replyQueue.deliver = { _, _, done in done(.background) }
         store.onChange = { model.recompute() }
         store.onTransition = { scene.focused ? model.showQuietly($0) : model.handle($0) }
         if let t = scene.limitResetAt {
@@ -234,6 +240,26 @@ final class Recorder {
         ChatMessage(id: "4", role: .assistant, text: "All **214 tests** pass. Ready to commit when you are."),
     ]
 
+    static let demoPortsFolder = "/Users/you/Projects/acme/website"
+
+    /// Made-up dev servers for the ports scene.
+    static var demoPorts: [ListeningPort] {
+        func port(_ number: Int, _ label: String, _ process: String, cwd: String?, agent: Agent?, app: String?,
+                  bundle: String?, hours: Double, exposed: Bool = false) -> ListeningPort {
+            ListeningPort(port: number, pid: pid_t(40_000 + number), process: process, label: label, path: "/usr/local/bin/\(process)",
+                          command: "\(process) \(label)", cwd: cwd, startedAt: Clock.now().addingTimeInterval(-hours * 3600),
+                          exposed: exposed, agent: agent, hostApp: app, hostBundleID: bundle, ancestors: [],
+                          isDev: true, needsConfirm: false)
+        }
+        return [
+            port(5173, "vite", "node", cwd: demoPortsFolder, agent: .claude, app: "Terminal",
+                 bundle: "com.apple.Terminal", hours: 0.1),
+            port(8000, "uvicorn", "python3", cwd: "/Users/you/Projects/acme/api", agent: nil, app: "Cursor",
+                 bundle: "com.todesktop.230313mzl4w4u92", hours: 3, exposed: true),
+            port(11434, "ollama", "ollama", cwd: nil, agent: nil, app: nil, bundle: nil, hours: 50),
+        ]
+    }
+
     /// Files that exist on every Mac, for the shelf scenes.
     static let demoFiles: [URL] = ["/System/Library/CoreServices/Finder.app", "/etc/hosts",
                                    "/System/Library/Desktop Pictures"]
@@ -258,6 +284,58 @@ final class Recorder {
                 (4.0, { $0.petNosy() }),
                 (5.8, { $0.isHovering = false }),
                 (6.6, { $0.updateGaze(mouse: CGPoint(x: -120, y: -90), notchCenter: .zero) }),
+            ]),
+            Scene(name: "clock", duration: 11, height: 250, stillAt: 5.6, clockAt: (9, 41, 57), steps: [
+                (7.6, prompt),
+                (9.2, ev("SessionEnd")),
+            ], actions: [
+                (0.4, { $0.recompute() }),
+                (4.2, { $0.isHovering = true }),
+                (7.0, { $0.isHovering = false }),
+            ]),
+            Scene(name: "progress", duration: 9, height: 250, hoverAt: 6.4, stillAt: 5.4, steps: [
+                (0.0, ev("SessionStart")),
+                (0.3, prompt),
+                (0.9, ev("PreToolUse", tool: "TodoWrite", input: ["todos": [
+                    ["status": "in_progress"], ["status": "pending"], ["status": "pending"], ["status": "pending"], ["status": "pending"],
+                ]])),
+                (1.4, ev("PostToolUse", tool: "TodoWrite")),
+                (1.7, ev("PreToolUse", tool: "Edit", input: ["file_path": "\(cwd)/Sources/Parser.swift"])),
+                (2.6, ev("PreToolUse", tool: "TodoWrite", input: ["todos": [
+                    ["status": "completed"], ["status": "in_progress"], ["status": "pending"], ["status": "pending"], ["status": "pending"],
+                ]])),
+                (3.1, ev("PreToolUse", tool: "Bash", input: ["description": "Run the tests"])),
+                (4.3, ev("PreToolUse", tool: "TodoWrite", input: ["todos": [
+                    ["status": "completed"], ["status": "completed"], ["status": "completed"], ["status": "in_progress"], ["status": "pending"],
+                ]])),
+                (4.8, ev("PreToolUse", tool: "Edit", input: ["file_path": "\(cwd)/README.md"])),
+            ]),
+            Scene(name: "queue", duration: 9, height: 400, stillAt: 3.6, steps: [
+                (0.0, ev("SessionStart", "queue", cwd: "/Users/you/Projects/api-server")),
+                (0.2, ev("UserPromptSubmit", "queue", cwd: "/Users/you/Projects/api-server")),
+                (0.6, ev("PreToolUse", "queue", cwd: "/Users/you/Projects/api-server", tool: "Bash", input: ["description": "Run the tests"])),
+                (5.4, ev("Stop", "queue", cwd: "/Users/you/Projects/api-server", last: "All 214 tests pass.")),
+                (7.4, ev("UserPromptSubmit", "queue", cwd: "/Users/you/Projects/api-server")),
+            ], actions: [
+                (1.2, { model in
+                    guard let session = model.store.sessions["queue"] else { return }
+                    model.previewChat(session, messages: Self.demoChat)
+                }),
+                (2.2, { $0.sendReply("now add a test for the expired-token case") }),
+                (3.0, { $0.sendReply("then update the changelog") }),
+            ]),
+            Scene(name: "clock-meeting", duration: 6, stillAt: 2.0, clockAt: (9, 41, 57), steps: [], actions: [
+                (0.4, { model in
+                    model.previewMeeting = Self.demoMeeting
+                    model.recompute()
+                }),
+            ]),
+            Scene(name: "unlock", duration: 6, stillAt: 3.2, steps: [
+                (0.0, ev("SessionStart")),
+                (0.3, prompt),
+                (2.2, ev("Stop", last: "Seven days in a row. Nosy has something new to wear.")),
+            ], actions: [
+                (2.21, { $0.celebrateUnlock(.crown) }),
             ]),
             Scene(name: "level-up", duration: 6, stillAt: 3.2, steps: [
                 (0.0, ev("SessionStart")),
@@ -388,6 +466,17 @@ final class Recorder {
             ]),
             Scene(name: "shelf", duration: 5, height: 250, hoverAt: 0.8, stillAt: 3.0, steps: [], actions: [
                 (0.0, { $0.shelf.add(Self.demoFiles) }),
+            ]),
+            Scene(name: "ports", duration: 7, height: 260, hoverAt: 0.9, stillAt: 3.0, steps: [
+                (0.0, ev("SessionStart", "web", cwd: Self.demoPortsFolder)),
+                (0.1, ev("UserPromptSubmit", "web", cwd: Self.demoPortsFolder)),
+                (0.2, ev("PreToolUse", "web", cwd: Self.demoPortsFolder, tool: "Bash",
+                         input: ["command": "npm run dev", "description": "Start the dev server"])),
+            ], actions: [
+                (0.0, { $0.ports.preview(Self.demoPorts) }),
+                (4.4, { model in
+                    if let api = model.ports.ports.first(where: { $0.port == 8000 }) { model.ports.quit(api) }
+                }),
             ]),
             Scene(name: "media", duration: 7, height: 220, hoverAt: 2.6, stillAt: 5.0, musicAt: 0.5, steps: []),
             Scene(name: "handoff", duration: 9, dismissFlashAt: 6.6, musicAt: 0.0, steps: [
